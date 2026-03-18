@@ -16,6 +16,10 @@
   <option timestep="0.002" gravity="0 0 -9.81"/>
 
   <asset>
+    <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
+    <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
+    <material name="matarm" rgba="0.95 0.95 0.95 1" specular="0.5" shininess="0.5"/>
+
     <mesh name="base_link" file="base_link.obj"/>
     <mesh name="J1"        file="J1.obj"/>
     <mesh name="J2"        file="J2.obj"/>
@@ -28,7 +32,7 @@
   <default>
     <joint limited="true" damping="0.5" armature="0.01" frictionloss="0.1"/>
     <default class="visual">
-      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      <geom type="mesh" contype="0" conaffinity="0" group="2" material="matarm"/>
     </default>
     <default class="collision">
       <geom type="mesh" group="3"/>
@@ -37,9 +41,10 @@
   </default>
 
   <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <!-- Floor -->
     <geom name="floor" type="plane" pos="0 0 0" size="2 2 0.1"
-          rgba="0.8 0.8 0.8 1" contype="1" conaffinity="1"/>
+          material="matplane" contype="1" conaffinity="1"/>
 
     <!-- Robot fixed to world -->
     <body name="base_link" pos="0 0 0">
