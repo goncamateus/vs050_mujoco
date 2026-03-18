@@ -1,5 +1,7 @@
 # DENSO VS050 – MuJoCo Model
 
+![DENSO VS050 with Robotiq 2F-85](assets/vs050_2f85.png)
+
 A [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)-style model of the
 **DENSO VS050** 6-DoF industrial robot arm, derived from the
 [denso_robot_ros2](https://github.com/DENSORobot/denso_robot_ros2) ROS 2 package.
