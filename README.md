@@ -1,160 +1,51 @@
-# DENSO VS050 – MuJoCo Model
+# VS050 MuJoCo (Gymnasium)
 
-![DENSO VS050 with Robotiq 2F-85](assets/vs050_2f85.png)
+![PyPI](https://img.shields.io/pypi/v/vs050-mujoco?color=blue&style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-A [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)-style model of the
-**DENSO VS050** 6-DoF industrial robot arm, derived from the
-[denso_robot_ros2](https://github.com/DENSORobot/denso_robot_ros2) ROS 2 package.
+A complete Gym environment and simulation suite for the **DENSO VS050 6-DoF** robotic arm extended with a **Robotiq 2F-85** intelligent gripper. This repository offers a clean Python package and [Gymnasium](https://gymnasium.farama.org/) environments simulating precise manipulation physics via [DeepMind MuJoCo](https://mujoco.org/).
 
-## Robot Specifications
+## Installation
 
-| Parameter | Value |
-|-----------|-------|
-| Degrees of freedom | 6 revolute |
-| Total reach | ~800 mm |
-| Payload | 5 kg |
-| Mounting | Floor (fixed base) |
-
-### Kinematic Chain
-
-```
-world → base_link
-  joint_1 (Z) → J1   @ z +181.5 mm
-    joint_2 (Y) → J2   @ z +163.5 mm
-      joint_3 (Y) → J3   @ z +250.0 mm
-        joint_4 (Z) → J4   @ x -10 mm, z +119.5 mm
-          joint_5 (Y) → J5   @ z +135.5 mm
-            joint_6 (Z) → J6   @ z  +70.0 mm
-              attachment_site    @ z  +50.0 mm
-```
-
-### Joint Limits
-
-| Joint | Lower (rad) | Upper (rad) | Max vel (rad/s) |
-|-------|------------|------------|----------------|
-| joint_1 | -2.967 | 2.967 | 3.731 |
-| joint_2 | -2.094 | 2.094 | 2.487 |
-| joint_3 | -2.182 | 2.705 | 2.715 |
-| joint_4 | -4.712 | 4.712 | 3.731 |
-| joint_5 | -2.094 | 2.094 | 2.871 |
-| joint_6 | -6.283 | 6.283 | 5.969 |
-
-## File Structure
-
-```
-vs050_mujoco/
-├── assets/
-│   ├── base_link.dae   # Base link mesh (Collada)
-│   ├── J1.dae          # Link 1 mesh
-│   ├── J2.dae          # Link 2 mesh
-│   ├── J3.dae          # Link 3 mesh
-│   ├── J4.dae          # Link 4 mesh
-│   ├── J5.dae          # Link 5 mesh
-│   ├── J6.dae          # Link 6 mesh (wrist)
-│   └── ...             # Robotiq 2F-85 STL meshes
-├── vs050.xml           # Complete scene (floor + robot + actuators + keyframe)
-├── vs050_2f85.xml      # Scene with the Robotiq 2F-85 gripper attached to J6
-└── README.md
-```
-
-## Usage
-
-### Open in MuJoCo Viewer
+This project is fully managed with `uv`. To install it natively or use it in other projects:
 
 ```bash
-# Python bindings (MuJoCo ≥ 2.3)
-python3 -m mujoco.viewer --mjcf vs050_mujoco/vs050.xml
+git clone https://github.com/goncamateus/vs050_mujoco.git
+cd vs050_mujoco
+
+# Install the package seamlessly into the workspace
+uv sync
 ```
 
-Or interactively:
+## Quick Start
 
 ```python
-import mujoco
-import mujoco.viewer
+import gymnasium as gym
+import vs050_mujoco  # Registers the environment automatically
 
-model = mujoco.MjModel.from_xml_path("vs050_mujoco/vs050.xml")
-data  = mujoco.MjData(model)
+env = gym.make("VS050-PickAndPlace-v0", render_mode="human")
+obs, info = env.reset()
 
-with mujoco.viewer.launch_passive(model, data) as viewer:
-    mujoco.mj_resetDataKeyframe(model, data, 0)  # load "home" pose
-    viewer.sync()
-    input("Press Enter to exit...")
-```
-
-### Embed in Your Own Scene
-
-Paste the `<worldbody>` contents of `vs050.xml` into your scene, or use
-`<include file="path/to/vs050.xml"/>` (note: MuJoCo's `<include>` requires the
-included file to contain a complete `<mujoco>` element).
-
-### Programmatic Control (Python)
-
-```python
-import mujoco
-import numpy as np
-
-model = mujoco.MjModel.from_xml_path("vs050_mujoco/vs050.xml")
-data  = mujoco.MjData(model)
-
-# Reset to home keyframe
-mujoco.mj_resetDataKeyframe(model, data, 0)
-
-# Move joint_1 to 0.5 rad
-data.ctrl[0] = 0.5
-
-# Step simulation
 for _ in range(1000):
-    mujoco.mj_step(model, data)
+    action = env.action_space.sample()  # Your agent code here
+    obs, reward, terminated, truncated, info = env.step(action)
+    
+    if terminated or truncated:
+        obs, info = env.reset()
 
-print("Joint positions:", data.qpos)
+env.close()
 ```
 
-### Velocity-controlled actuators
+*(You can test a random agent interacting with the environment by running `uv run python examples/random_agent.py`)*.
 
-The default actuators are **position-controlled** (`<position>`).  
-To switch to torque control, replace the `<actuator>` block with:
+---
 
-```xml
-<actuator>
-  <motor name="act_joint_1" joint="joint_1" gear="1" ctrlrange="-200 200"/>
-  <!-- … repeat for joints 2–6 -->
-</actuator>
-```
+## Documentation
 
-### Using the Robotiq 2F-85 Gripper
+The project documentation is cleanly split into two modules covering the simulation physics and the reinforcement learning interface:
 
-A composed model including the [Robotiq 2F-85 gripper](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotiq_2f85) attached to the J6 wrist is provided in `vs050_2f85.xml`.
-
-To view and interact with the combined arm and gripper:
-
-```bash
-uv run python -m mujoco.viewer --mjcf vs050_2f85.xml
-```
-
-The gripper's multi-bar linkage is fully simulated using equality constraints and a single general actuator (`fingers_actuator`) with a control range of `[0, 255]`. Both the arm's joints and the gripper can be controlled programmatically via `data.ctrl`.
-
-## Keyframes
-
-| Name | Description |
-|------|-------------|
-| `home` | All joints zero except joint_3 = π/2 (≈ 90°), matching `initial_positions.yaml` |
-
-## Meshes
-
-Collada (`.dae`) meshes are used directly as supplied by DENSO WAVE INCORPORATED in the
-original ROS 2 package. MuJoCo ≥ 2.3.x supports Collada natively.
-
-If you need OBJ/STL meshes (e.g. for older MuJoCo versions or `obj2mjcf` post-processing),
-convert with:
-
-```bash
-# requires Blender CLI or trimesh
-python3 -c "
-import trimesh, pathlib
-for p in pathlib.Path('assets').glob('*.dae'):
-    trimesh.load(p).export(p.with_suffix('.obj'))
-"
-```
+- 🤖 **[Models Documentation](src/vs050_mujoco/models/README.md)**: Kinematics, joint limits, meshes, and standalone MuJoCo models.
+- 🎯 **[Environments Documentation](src/vs050_mujoco/envs/README.md)**: Details on observation spaces, action constraints, and reward functions (includes visual previews).
 
 ## License
 
