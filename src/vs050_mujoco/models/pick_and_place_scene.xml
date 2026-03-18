@@ -1,0 +1,448 @@
+<mujoco model="pick_and_place">
+  <!--
+    Pick-and-Place Scene for DENSO VS050 + Robotiq 2F-85
+    Scene layout:
+      - Transparent cubic cage  (1.2 m × 1.2 m × 1.2 m)
+      - Wood floor box          (only inside the cage)
+      - Robot at cage centre    (0, 0, 0)
+      - 3 pickable cube objects with free joints
+      - Green target zone site
+  -->
+
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" cone="elliptic" impratio="10"/>
+
+  <!-- ===== Assets ===== -->
+  <asset>
+    <!-- VS050 arm material -->
+    <material name="matarm" rgba="0.95 0.95 0.95 1" specular="0.5" shininess="0.5"/>
+
+    <!-- Wood floor texture (procedural) -->
+    <texture name="tex_wood" type="2d" builtin="flat"
+             rgb1="0.55 0.35 0.15" rgb2="0.45 0.28 0.10"
+             width="512" height="512"/>
+    <material name="mat_wood" texture="tex_wood" texrepeat="4 4"
+              reflectance="0.1" shininess="0.2" specular="0.1"/>
+
+    <!-- Glass / cage material -->
+    <material name="mat_glass" rgba="0.75 0.92 1.0 0.12"
+              specular="0.9" shininess="0.9" reflectance="0.3"/>
+
+    <!-- Object materials -->
+    <material name="mat_red"    rgba="0.85 0.15 0.10 1"/>
+    <material name="mat_blue"   rgba="0.12 0.35 0.85 1"/>
+    <material name="mat_yellow" rgba="0.95 0.80 0.08 1"/>
+
+    <!-- Target zone material -->
+    <material name="mat_target" rgba="0.10 0.90 0.30 0.45"/>
+
+    <!-- VS050 meshes -->
+    <mesh name="base_link" file="base_link.obj"/>
+    <mesh name="J1"        file="J1.obj"/>
+    <mesh name="J2"        file="J2.obj"/>
+    <mesh name="J3"        file="J3.obj"/>
+    <mesh name="J4"        file="J4.obj"/>
+    <mesh name="J5"        file="J5.obj"/>
+    <mesh name="J6"        file="J6.obj"/>
+
+    <!-- Robotiq 2F-85 materials -->
+    <material name="metal"    rgba="0.58 0.58 0.58 1"/>
+    <material name="silicone" rgba="0.19 0.19 0.19 1"/>
+    <material name="gray"     rgba="0.46 0.46 0.46 1"/>
+    <material name="black"    rgba="0.15 0.15 0.15 1"/>
+
+    <!-- Robotiq 2F-85 meshes -->
+    <mesh class="2f85" file="base_mount.stl"/>
+    <mesh class="2f85" file="base.stl"/>
+    <mesh class="2f85" file="driver.stl"/>
+    <mesh class="2f85" file="coupler.stl"/>
+    <mesh class="2f85" file="follower.stl"/>
+    <mesh class="2f85" file="pad.stl"/>
+    <mesh class="2f85" file="silicone_pad.stl"/>
+    <mesh class="2f85" file="spring_link.stl"/>
+  </asset>
+
+  <!-- ===== Defaults (mirrors vs050_2f85.xml) ===== -->
+  <default>
+    <joint limited="true" damping="0.5" armature="0.01" frictionloss="0.1"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2" material="matarm"/>
+    </default>
+    <default class="collision">
+      <geom type="mesh" group="3"/>
+    </default>
+    <position kp="500" kv="50" ctrllimited="true"/>
+
+    <!-- Robotiq 2F-85 -->
+    <default class="2f85">
+      <mesh scale="0.001 0.001 0.001"/>
+      <general biastype="affine"/>
+      <joint axis="1 0 0"/>
+      <default class="driver">
+        <joint range="0 0.8" armature="0.005" damping="0.1"
+               solimplimit="0.95 0.99 0.001" solreflimit="0.005 1"/>
+      </default>
+      <default class="follower">
+        <joint range="-0.872664 0.872664" armature="0.001"
+               pos="0 -0.018 0.0065"
+               solimplimit="0.95 0.99 0.001" solreflimit="0.005 1"/>
+      </default>
+      <default class="spring_link">
+        <joint range="-0.29670597283 0.8" armature="0.001"
+               stiffness="0.05" springref="2.62" damping="0.00125"/>
+      </default>
+      <default class="coupler">
+        <joint range="-1.57 0" armature="0.001"
+               solimplimit="0.95 0.99 0.001" solreflimit="0.005 1"/>
+      </default>
+      <default class="2f85_visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="2f85_collision">
+        <geom type="mesh" group="3"/>
+        <default class="pad_box1">
+          <geom mass="0" type="box" pos="0 -0.0026 0.028125"
+                size="0.011 0.004 0.009375" friction="0.7"
+                solimp="0.95 0.99 0.001" solref="0.004 1"
+                priority="1" rgba="0.55 0.55 0.55 1"/>
+        </default>
+        <default class="pad_box2">
+          <geom mass="0" type="box" pos="0 -0.0026 0.009375"
+                size="0.011 0.004 0.009375" friction="0.6"
+                solimp="0.95 0.99 0.001" solref="0.004 1"
+                priority="1" rgba="0.45 0.45 0.45 1"/>
+        </default>
+      </default>
+    </default>
+  </default>
+
+  <!-- ===== World ===== -->
+  <worldbody>
+    <!-- Lighting: two overhead + one fill -->
+    <light name="light_overhead" pos="0 0 1.8" dir="0 0 -1"
+           directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+    <light name="light_fill" pos="0.6 0.6 1.2" dir="-0.4 -0.4 -0.8"
+           directional="true" diffuse="0.4 0.4 0.5" specular="0.1 0.1 0.1"/>
+
+    <!-- ===== Cage (1.2 m cube, robot base at centre) ===== -->
+    <!--
+      Cage half-size: 0.6 m in X and Y, 1.2 m tall (z: 0 → 1.2)
+      Walls are 5 mm thick boxes.  contype/conaffinity=2 so cage only
+      collides with objects (conaffinity=2) and not with the robot arm (conaffinity=1).
+    -->
+    <!-- Floor of the cage (wood) – sits at z=0, thickness 10 mm -->
+    <geom name="floor_wood"
+          type="box" pos="0 0 -0.005" size="0.6 0.6 0.005"
+          material="mat_wood"
+          contype="1" conaffinity="1"
+          friction="0.8 0.005 0.0001"/>
+
+    <!-- North wall (+Y) -->
+    <geom name="cage_wall_north"
+          type="box" pos="0  0.6025 0.6" size="0.6025 0.0025 0.6"
+          material="mat_glass" contype="2" conaffinity="2"/>
+    <!-- South wall (-Y) -->
+    <geom name="cage_wall_south"
+          type="box" pos="0 -0.6025 0.6" size="0.6025 0.0025 0.6"
+          material="mat_glass" contype="2" conaffinity="2"/>
+    <!-- East wall (+X) -->
+    <geom name="cage_wall_east"
+          type="box" pos=" 0.6025 0 0.6" size="0.0025 0.6025 0.6"
+          material="mat_glass" contype="2" conaffinity="2"/>
+    <!-- West wall (-X) -->
+    <geom name="cage_wall_west"
+          type="box" pos="-0.6025 0 0.6" size="0.0025 0.6025 0.6"
+          material="mat_glass" contype="2" conaffinity="2"/>
+    <!-- Ceiling -->
+    <geom name="cage_ceiling"
+          type="box" pos="0 0 1.205" size="0.6025 0.6025 0.0025"
+          material="mat_glass" contype="2" conaffinity="2"/>
+
+    <!-- ===== Target zone (visual site only) ===== -->
+    <site name="target_site"
+          type="cylinder" pos="0.30 0.30 0.001"
+          size="0.05 0.002"
+          material="mat_target" group="1"/>
+
+    <!-- ===== Robot arm: VS050 + 2F-85 ===== -->
+    <body name="base_link" pos="0 0 0">
+      <geom mesh="base_link" class="visual"     name="base_link_visual"/>
+      <geom mesh="base_link" class="collision"  name="base_link_collision"/>
+      <inertial pos="0 0 0" mass="5.0" diaginertia="0.05 0.05 0.05"/>
+
+      <body name="J1" pos="0 0 0.1815">
+        <joint name="joint_1" type="hinge" axis="0 0 1"
+               range="-2.96705972839036 2.96705972839036"
+               actuatorfrcrange="-200 200"/>
+        <geom mesh="J1" class="visual"    name="J1_visual"/>
+        <geom mesh="J1" class="collision" name="J1_collision"/>
+        <inertial pos="0 0 0" mass="4.0" diaginertia="0.04 0.04 0.04"/>
+
+        <body name="J2" pos="0 0 0.1635">
+          <joint name="joint_2" type="hinge" axis="0 1 0"
+                 range="-2.0943951023932 2.0943951023932"
+                 actuatorfrcrange="-200 200"/>
+          <geom mesh="J2" class="visual"    name="J2_visual"/>
+          <geom mesh="J2" class="collision" name="J2_collision"/>
+          <inertial pos="0 0 0" mass="3.5" diaginertia="0.035 0.035 0.035"/>
+
+          <body name="J3" pos="0 0 0.25">
+            <joint name="joint_3" type="hinge" axis="0 1 0"
+                   range="-2.18166156499291 2.70526034059121"
+                   actuatorfrcrange="-150 150"/>
+            <geom mesh="J3" class="visual"    name="J3_visual"/>
+            <geom mesh="J3" class="collision" name="J3_collision"/>
+            <inertial pos="0 0 0" mass="2.5" diaginertia="0.025 0.025 0.025"/>
+
+            <body name="J4" pos="-0.01 0 0.1195">
+              <joint name="joint_4" type="hinge" axis="0 0 1"
+                     range="-4.71238898038469 4.71238898038469"
+                     actuatorfrcrange="-100 100"/>
+              <geom mesh="J4" class="visual"    name="J4_visual"/>
+              <geom mesh="J4" class="collision" name="J4_collision"/>
+              <inertial pos="0 0 0" mass="1.5" diaginertia="0.015 0.015 0.015"/>
+
+              <body name="J5" pos="0 0 0.1355">
+                <joint name="joint_5" type="hinge" axis="0 1 0"
+                       range="-2.0943951023932 2.0943951023932"
+                       actuatorfrcrange="-80 80"/>
+                <geom mesh="J5" class="visual"    name="J5_visual"/>
+                <geom mesh="J5" class="collision" name="J5_collision"/>
+                <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+
+                <body name="J6" pos="0 0 0.07">
+                  <joint name="joint_6" type="hinge" axis="0 0 1"
+                         range="-3.141592653589793 3.141592653589793"
+                         actuatorfrcrange="-50 50"/>
+                  <geom mesh="J6" class="visual"    name="J6_visual"/>
+                  <geom mesh="J6" class="collision" name="J6_collision"/>
+                  <inertial pos="0 0 0" mass="0.5" diaginertia="0.005 0.005 0.005"/>
+
+                  <!-- Robotiq 2F-85 gripper -->
+                  <body name="base_mount" pos="0 0 0" childclass="2f85">
+                    <geom class="2f85_visual"    mesh="base_mount" material="black"/>
+                    <geom class="2f85_collision" mesh="base_mount"/>
+                    <body name="base" pos="0 0 0.0038" quat="1 0 0 -1">
+                      <inertial mass="0.777441" pos="0 -2.70394e-05 0.0354675"
+                                quat="1 -0.00152849 0 0"
+                                diaginertia="0.000260285 0.000225381 0.000152708"/>
+                      <geom class="2f85_visual"    mesh="base" material="black"/>
+                      <geom class="2f85_collision" mesh="base"/>
+                      <site name="pinch" pos="0 0 0.145" type="sphere"
+                            group="5" rgba="0.9 0.9 0.9 1" size="0.005"/>
+
+                      <!-- Right 4-bar linkage -->
+                      <body name="right_driver" pos="0 0.0306011 0.054904">
+                        <inertial mass="0.00899563"
+                                  pos="2.96931e-12 0.0177547 0.00107314"
+                                  quat="0.681301 0.732003 0 0"
+                                  diaginertia="1.72352e-06 1.60906e-06 3.22006e-07"/>
+                        <joint name="right_driver_joint" class="driver"/>
+                        <geom class="2f85_visual"    mesh="driver" material="gray"/>
+                        <geom class="2f85_collision" mesh="driver"/>
+                        <body name="right_coupler" pos="0 0.0315 -0.0041">
+                          <inertial mass="0.0140974"
+                                    pos="0 0.00301209 0.0232175"
+                                    quat="0.705636 -0.0455904 0.0455904 0.705636"
+                                    diaginertia="4.16206e-06 3.52216e-06 8.88131e-07"/>
+                          <joint name="right_coupler_joint" class="coupler"/>
+                          <geom class="2f85_visual"    mesh="coupler" material="black"/>
+                          <geom class="2f85_collision" mesh="coupler"/>
+                        </body>
+                      </body>
+                      <body name="right_spring_link" pos="0 0.0132 0.0609">
+                        <inertial mass="0.0221642"
+                                  pos="-8.65005e-09 0.0181624 0.0212658"
+                                  quat="0.663403 -0.244737 0.244737 0.663403"
+                                  diaginertia="8.96853e-06 6.71733e-06 2.63931e-06"/>
+                        <joint name="right_spring_link_joint" class="spring_link"/>
+                        <geom class="2f85_visual"    mesh="spring_link" material="black"/>
+                        <geom class="2f85_collision" mesh="spring_link"/>
+                        <body name="right_follower" pos="0 0.055 0.0375">
+                          <inertial mass="0.0125222"
+                                    pos="0 -0.011046 0.0124786"
+                                    quat="1 0.1664 0 0"
+                                    diaginertia="2.67415e-06 2.4559e-06 6.02031e-07"/>
+                          <joint name="right_follower_joint" class="follower"/>
+                          <geom class="2f85_visual"    mesh="follower" material="black"/>
+                          <geom class="2f85_collision" mesh="follower"/>
+                          <body name="right_pad" pos="0 -0.0189 0.01352">
+                            <geom class="pad_box1" name="right_pad1"/>
+                            <geom class="pad_box2" name="right_pad2"/>
+                            <inertial mass="0.0035" pos="0 -0.0025 0.0185"
+                                      quat="0.707107 0 0 0.707107"
+                                      diaginertia="4.73958e-07 3.64583e-07 1.23958e-07"/>
+                            <geom class="2f85_visual" mesh="pad"/>
+                            <body name="right_silicone_pad">
+                              <geom class="2f85_visual" mesh="silicone_pad" material="black"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+
+                      <!-- Left 4-bar linkage -->
+                      <body name="left_driver" pos="0 -0.0306011 0.054904" quat="0 0 0 1">
+                        <inertial mass="0.00899563"
+                                  pos="0 0.0177547 0.00107314"
+                                  quat="0.681301 0.732003 0 0"
+                                  diaginertia="1.72352e-06 1.60906e-06 3.22006e-07"/>
+                        <joint name="left_driver_joint" class="driver"/>
+                        <geom class="2f85_visual"    mesh="driver" material="gray"/>
+                        <geom class="2f85_collision" mesh="driver"/>
+                        <body name="left_coupler" pos="0 0.0315 -0.0041">
+                          <inertial mass="0.0140974"
+                                    pos="0 0.00301209 0.0232175"
+                                    quat="0.705636 -0.0455904 0.0455904 0.705636"
+                                    diaginertia="4.16206e-06 3.52216e-06 8.88131e-07"/>
+                          <joint name="left_coupler_joint" class="coupler"/>
+                          <geom class="2f85_visual"    mesh="coupler" material="black"/>
+                          <geom class="2f85_collision" mesh="coupler"/>
+                        </body>
+                      </body>
+                      <body name="left_spring_link" pos="0 -0.0132 0.0609" quat="0 0 0 1">
+                        <inertial mass="0.0221642"
+                                  pos="-8.65005e-09 0.0181624 0.0212658"
+                                  quat="0.663403 -0.244737 0.244737 0.663403"
+                                  diaginertia="8.96853e-06 6.71733e-06 2.63931e-06"/>
+                        <joint name="left_spring_link_joint" class="spring_link"/>
+                        <geom class="2f85_visual"    mesh="spring_link" material="black"/>
+                        <geom class="2f85_collision" mesh="spring_link"/>
+                        <body name="left_follower" pos="0 0.055 0.0375">
+                          <inertial mass="0.0125222"
+                                    pos="0 -0.011046 0.0124786"
+                                    quat="1 0.1664 0 0"
+                                    diaginertia="2.67415e-06 2.4559e-06 6.02031e-07"/>
+                          <joint name="left_follower_joint" class="follower"/>
+                          <geom class="2f85_visual"    mesh="follower" material="black"/>
+                          <geom class="2f85_collision" mesh="follower"/>
+                          <body name="left_pad" pos="0 -0.0189 0.01352">
+                            <geom class="pad_box1" name="left_pad1"/>
+                            <geom class="pad_box2" name="left_pad2"/>
+                            <inertial mass="0.0035" pos="0 -0.0025 0.0185"
+                                      quat="1 0 0 1"
+                                      diaginertia="4.73958e-07 3.64583e-07 1.23958e-07"/>
+                            <geom class="2f85_visual" mesh="pad"/>
+                            <body name="left_silicone_pad">
+                              <geom class="2f85_visual" mesh="silicone_pad" material="black"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+
+                    </body> <!-- base -->
+                  </body> <!-- base_mount -->
+                </body> <!-- J6 -->
+              </body> <!-- J5 -->
+            </body> <!-- J4 -->
+          </body> <!-- J3 -->
+        </body> <!-- J2 -->
+      </body> <!-- J1 -->
+    </body> <!-- base_link -->
+
+    <!-- ===== Pickable objects (contype=2, conaffinity=3 → collide with floor & cage) ===== -->
+    <!--
+      conaffinity=3 (bits 1+2) → objects react to contype=1 (floor) and contype=2 (cage walls)
+      contype=2                → objects collide with each other (conaffinity bit 2) and with
+                                 gripper pads (gripper pads use contype=1, conaffinity=1 by default
+                                 but we override below via the pad geoms)
+    -->
+
+    <!-- Object 0: red cube -->
+    <body name="object0" pos="0.25 -0.20 0.03">
+      <freejoint name="object0_joint"/>
+      <geom name="object0_geom"
+            type="box" size="0.025 0.025 0.025"
+            mass="0.05"
+            material="mat_red"
+            contype="2" conaffinity="3"
+            friction="0.8 0.005 0.0001"
+            solimp="0.95 0.99 0.001" solref="0.01 1"/>
+    </body>
+
+    <!-- Object 1: blue cube -->
+    <body name="object1" pos="-0.30 0.15 0.03">
+      <freejoint name="object1_joint"/>
+      <geom name="object1_geom"
+            type="box" size="0.025 0.025 0.025"
+            mass="0.05"
+            material="mat_blue"
+            contype="2" conaffinity="3"
+            friction="0.8 0.005 0.0001"
+            solimp="0.95 0.99 0.001" solref="0.01 1"/>
+    </body>
+
+    <!-- Object 2: yellow cube -->
+    <body name="object2" pos="0.10 0.35 0.03">
+      <freejoint name="object2_joint"/>
+      <geom name="object2_geom"
+            type="box" size="0.025 0.025 0.025"
+            mass="0.05"
+            material="mat_yellow"
+            contype="2" conaffinity="3"
+            friction="0.8 0.005 0.0001"
+            solimp="0.95 0.99 0.001" solref="0.01 1"/>
+    </body>
+
+  </worldbody>
+
+  <!-- ===== Gripper linkage constraints (from vs050_2f85.xml) ===== -->
+  <contact>
+    <exclude body1="base" body2="left_driver"/>
+    <exclude body1="base" body2="right_driver"/>
+    <exclude body1="base" body2="left_spring_link"/>
+    <exclude body1="base" body2="right_spring_link"/>
+    <exclude body1="right_coupler" body2="right_follower"/>
+    <exclude body1="left_coupler"  body2="left_follower"/>
+  </contact>
+
+  <tendon>
+    <fixed name="split">
+      <joint joint="right_driver_joint" coef="0.5"/>
+      <joint joint="left_driver_joint"  coef="0.5"/>
+    </fixed>
+  </tendon>
+
+  <equality>
+    <connect anchor="0 0 0" body1="right_follower" body2="right_coupler"
+             solimp="0.95 0.99 0.001" solref="0.005 1"/>
+    <connect anchor="0 0 0" body1="left_follower"  body2="left_coupler"
+             solimp="0.95 0.99 0.001" solref="0.005 1"/>
+    <joint joint1="right_driver_joint" joint2="left_driver_joint"
+           polycoef="0 1 0 0 0"
+           solimp="0.95 0.99 0.001" solref="0.005 1"/>
+  </equality>
+
+  <!-- ===== Actuators ===== -->
+  <actuator>
+    <!-- VS050 position actuators -->
+    <position name="act_joint_1" joint="joint_1"
+              ctrlrange="-2.96705972839036 2.96705972839036" kp="500" kv="50"/>
+    <position name="act_joint_2" joint="joint_2"
+              ctrlrange="-2.0943951023932 2.0943951023932"   kp="500" kv="50"/>
+    <position name="act_joint_3" joint="joint_3"
+              ctrlrange="-2.18166156499291 2.70526034059121" kp="500" kv="50"/>
+    <position name="act_joint_4" joint="joint_4"
+              ctrlrange="-4.71238898038469 4.71238898038469" kp="300" kv="30"/>
+    <position name="act_joint_5" joint="joint_5"
+              ctrlrange="-2.0943951023932 2.0943951023932"   kp="200" kv="20"/>
+    <position name="act_joint_6" joint="joint_6"
+              ctrlrange="-3.141592653589793 3.141592653589793" kp="100" kv="10"/>
+
+    <!-- Robotiq 2F-85 -->
+    <general class="2f85" name="fingers_actuator"
+              tendon="split" forcerange="-5 5" ctrlrange="0 255"
+              gainprm="0.3137255 0 0" biasprm="0 -100 -10"/>
+  </actuator>
+
+  <!-- ===== Home keyframe ===== -->
+  <keyframe>
+    <key name="home"
+         qpos="0 0 1.5707963267948966 0 0 0  0 0
+               0.25 -0.20 0.03  1 0 0 0
+              -0.30  0.15 0.03  1 0 0 0
+               0.10  0.35 0.03  1 0 0 0"
+         ctrl="0 0 1.5707963267948966 0 0 0  0"/>
+  </keyframe>
+
+</mujoco>
