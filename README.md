@@ -158,5 +158,10 @@ for p in pathlib.Path('assets').glob('*.dae'):
 
 ## License
 
-Meshes: © DENSO WAVE INCORPORATED (original ROS 2 package, see parent repo LICENSE).  
-MJCF model: MIT (same as parent repo).
+This project integrates assets from multiple open-source sources, distributed under their respective licenses:
+
+- **DENSO VS050 Robot Assets (Meshes & XML):** Sourced from [DENSORobot/denso_robot_ros2](https://github.com/DENSORobot/denso_robot_ros2) under the **MIT and BSD 3-Clause Licenses**.
+- **Robotiq 2F-85 Gripper Assets:** Sourced from Google DeepMind's [mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie) under the **Apache License 2.0**.
+- **Environment & Implementation Code:** Provided under the **MIT License**.
+
+See the `LICENSE` file for the exact terms and complete license texts.
