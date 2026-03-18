@@ -1,0 +1,146 @@
+<mujoco model="vs050">
+  <!--
+    DENSO VS050 6-DoF Robot Arm
+    MuJoCo Menagerie-style model
+    Derived from: denso_robot_ros2 (ROS2 URDF/xacro)
+    Meshes:       Collada DAE, original from DENSO WAVE INCORPORATED
+
+    Kinematic chain
+      base_link → J1 (joint_1, z-axis) → J2 (joint_2, y-axis)
+                → J3 (joint_3, y-axis) → J4 (joint_4, z-axis)
+                → J5 (joint_5, y-axis) → J6 (joint_6, z-axis)
+  -->
+
+  <compiler angle="radian" meshdir="assets"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+
+  <asset>
+    <mesh name="base_link" file="base_link.obj"/>
+    <mesh name="J1"        file="J1.obj"/>
+    <mesh name="J2"        file="J2.obj"/>
+    <mesh name="J3"        file="J3.obj"/>
+    <mesh name="J4"        file="J4.obj"/>
+    <mesh name="J5"        file="J5.obj"/>
+    <mesh name="J6"        file="J6.obj"/>
+  </asset>
+
+  <default>
+    <joint limited="true" damping="0.5" armature="0.01" frictionloss="0.1"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom type="mesh" group="3"/>
+    </default>
+    <position kp="500" kv="50" ctrllimited="true"/>
+  </default>
+
+  <worldbody>
+    <!-- Floor -->
+    <geom name="floor" type="plane" pos="0 0 0" size="2 2 0.1"
+          rgba="0.8 0.8 0.8 1" contype="1" conaffinity="1"/>
+
+    <!-- Robot fixed to world -->
+    <body name="base_link" pos="0 0 0">
+      <geom mesh="base_link" class="visual" name="base_link_visual"/>
+      <geom mesh="base_link" class="collision" name="base_link_collision"/>
+      <inertial pos="0 0 0" mass="5.0"
+                diaginertia="0.05 0.05 0.05"/>
+
+      <body name="J1" pos="0 0 0.1815">
+        <joint name="joint_1" type="hinge" axis="0 0 1"
+               range="-2.96705972839036 2.96705972839036"
+               actuatorfrcrange="-200 200"/>
+        <geom mesh="J1" class="visual" name="J1_visual"/>
+        <geom mesh="J1" class="collision" name="J1_collision"/>
+        <inertial pos="0 0 0" mass="4.0"
+                  diaginertia="0.04 0.04 0.04"/>
+
+        <body name="J2" pos="0 0 0.1635">
+          <joint name="joint_2" type="hinge" axis="0 1 0"
+                 range="-2.0943951023932 2.0943951023932"
+                 actuatorfrcrange="-200 200"/>
+          <geom mesh="J2" class="visual" name="J2_visual"/>
+          <geom mesh="J2" class="collision" name="J2_collision"/>
+          <inertial pos="0 0 0" mass="3.5"
+                    diaginertia="0.035 0.035 0.035"/>
+
+          <body name="J3" pos="0 0 0.25">
+            <joint name="joint_3" type="hinge" axis="0 1 0"
+                   range="-2.18166156499291 2.70526034059121"
+                   actuatorfrcrange="-150 150"/>
+            <geom mesh="J3" class="visual" name="J3_visual"/>
+            <geom mesh="J3" class="collision" name="J3_collision"/>
+            <inertial pos="0 0 0" mass="2.5"
+                      diaginertia="0.025 0.025 0.025"/>
+
+            <body name="J4" pos="-0.01 0 0.1195">
+              <joint name="joint_4" type="hinge" axis="0 0 1"
+                     range="-4.71238898038469 4.71238898038469"
+                     actuatorfrcrange="-100 100"/>
+              <geom mesh="J4" class="visual" name="J4_visual"/>
+              <geom mesh="J4" class="collision" name="J4_collision"/>
+              <inertial pos="0 0 0" mass="1.5"
+                        diaginertia="0.015 0.015 0.015"/>
+
+              <body name="J5" pos="0 0 0.1355">
+                <joint name="joint_5" type="hinge" axis="0 1 0"
+                       range="-2.0943951023932 2.0943951023932"
+                       actuatorfrcrange="-80 80"/>
+                <geom mesh="J5" class="visual" name="J5_visual"/>
+                <geom mesh="J5" class="collision" name="J5_collision"/>
+                <inertial pos="0 0 0" mass="1.0"
+                          diaginertia="0.01 0.01 0.01"/>
+
+                <body name="J6" pos="0 0 0.07">
+                  <joint name="joint_6" type="hinge" axis="0 0 1"
+                         range="-6.28318530717959 6.28318530717959"
+                         actuatorfrcrange="-50 50"/>
+                  <geom mesh="J6" class="visual" name="J6_visual"/>
+                  <geom mesh="J6" class="collision" name="J6_collision"/>
+                  <inertial pos="0 0 0" mass="0.5"
+                            diaginertia="0.005 0.005 0.005"/>
+
+                  <!-- End-effector site -->
+                  <site name="attachment_site" pos="0 0 0.05"
+                        quat="1 0 0 0" size="0.01" rgba="1 0 0 0.5"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Position-controlled actuators (one per joint) -->
+  <actuator>
+    <position name="act_joint_1" joint="joint_1"
+              ctrlrange="-2.96705972839036 2.96705972839036"
+              kp="500" kv="50"/>
+    <position name="act_joint_2" joint="joint_2"
+              ctrlrange="-2.0943951023932 2.0943951023932"
+              kp="500" kv="50"/>
+    <position name="act_joint_3" joint="joint_3"
+              ctrlrange="-2.18166156499291 2.70526034059121"
+              kp="500" kv="50"/>
+    <position name="act_joint_4" joint="joint_4"
+              ctrlrange="-4.71238898038469 4.71238898038469"
+              kp="300" kv="30"/>
+    <position name="act_joint_5" joint="joint_5"
+              ctrlrange="-2.0943951023932 2.0943951023932"
+              kp="200" kv="20"/>
+    <position name="act_joint_6" joint="joint_6"
+              ctrlrange="-6.28318530717959 6.28318530717959"
+              kp="100" kv="10"/>
+  </actuator>
+
+  <!-- Home keyframe: joints at initial_positions.yaml values -->
+  <keyframe>
+    <key name="home"
+         qpos="0 0 1.5707963267948966 0 0 0"
+         ctrl="0 0 1.5707963267948966 0 0 0"/>
+  </keyframe>
+
+</mujoco>
