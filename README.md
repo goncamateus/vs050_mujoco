@@ -48,8 +48,10 @@ vs050_mujoco/
 │   ├── J3.dae          # Link 3 mesh
 │   ├── J4.dae          # Link 4 mesh
 │   ├── J5.dae          # Link 5 mesh
-│   └── J6.dae          # Link 6 mesh (wrist)
+│   ├── J6.dae          # Link 6 mesh (wrist)
+│   └── ...             # Robotiq 2F-85 STL meshes
 ├── vs050.xml           # Complete scene (floor + robot + actuators + keyframe)
+├── vs050_2f85.xml      # Scene with the Robotiq 2F-85 gripper attached to J6
 └── README.md
 ```
 
@@ -116,6 +118,18 @@ To switch to torque control, replace the `<actuator>` block with:
   <!-- … repeat for joints 2–6 -->
 </actuator>
 ```
+
+### Using the Robotiq 2F-85 Gripper
+
+A composed model including the [Robotiq 2F-85 gripper](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotiq_2f85) attached to the J6 wrist is provided in `vs050_2f85.xml`.
+
+To view and interact with the combined arm and gripper:
+
+```bash
+uv run python -m mujoco.viewer --mjcf vs050_2f85.xml
+```
+
+The gripper's multi-bar linkage is fully simulated using equality constraints and a single general actuator (`fingers_actuator`) with a control range of `[0, 255]`. Both the arm's joints and the gripper can be controlled programmatically via `data.ctrl`.
 
 ## Keyframes
 
