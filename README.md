@@ -1,6 +1,6 @@
 # VS050 MuJoCo (Gymnasium)
 
-![PyPI](https://img.shields.io/pypi/v/vs050-mujoco?color=blue&style=flat-square)
+![PyPI](https://img.shields.io/pypi/v/vs050-mujoco)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 A complete Gym environment and simulation suite for the **DENSO VS050 6-DoF** robotic arm extended with a **Robotiq 2F-85** intelligent gripper. This repository offers a clean Python package and [Gymnasium](https://gymnasium.farama.org/) environments simulating precise manipulation physics via [DeepMind MuJoCo](https://mujoco.org/).
