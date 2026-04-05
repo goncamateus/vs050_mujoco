@@ -9,6 +9,7 @@ This directory contains standalone MuJoCo XML models and graphical assets for th
 - `vs050.xml`: The base 6-DoF DENSO arm mounted on a floor.
 - `vs050_2f85.xml`: The arm with the [Robotiq 2F-85 gripper](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotiq_2f85) attached to its wrist.
 - `pick_and_place_scene.xml`: The compound simulation scene used for the RL environment containing a transparent cage and pickable objects.
+- `scene_reach.xml`: The minimal scene for the reach-pose task — the VS050 arm with a translucent sphere marker used as the goal target.
 
 ## Robot Specifications
 

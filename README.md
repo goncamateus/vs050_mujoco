@@ -23,6 +23,8 @@ uv sync
 import gymnasium as gym
 import vs050_mujoco  # Registers the environment automatically
 
+env = gym.make("VS050-ReachPose-v0", render_mode="human")
+# or
 env = gym.make("VS050-PickAndPlace-v0", render_mode="human")
 obs, info = env.reset()
 

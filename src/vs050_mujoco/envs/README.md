@@ -2,6 +2,52 @@
 
 This module contains the reinforcement learning environments built using Gymnasium for the DENSO VS050 robot arm.
 
+## `VS050-ReachPose-v0`
+
+![ReachPose Environment](../../../assets/reach_pose.gif)
+
+ReachPose is a goal-oriented environment designed for Hindsight Experience Replay (HER). The 6-DoF VS050 arm must move its end-effector to a randomly sampled 3D target position inside its reachable workspace.
+
+* **Simulation:** The bare VS050 arm on a floor. A translucent red sphere marks the goal position, sampled from a conservative workspace envelope.
+* **Objective:** Drive the end-effector (the `attachment_site`) within `4 cm` of the desired target.
+* **HER-Compatible:** Implements the GoalEnv dict observation spec so that HER can relabel achieved/desired goals after the fact.
+
+### Action Space
+
+The action space is a `Box(-1.0, 1.0, (6,), float32)`.
+
+| Index | Name | Control Type | Max delta per step |
+|-------|------|--------------|--------------------|
+| `0–5` | Base & Arm Joints | Delta Position Target | `[0.08, 0.08, 0.08, 0.10, 0.10, 0.15]` rad |
+
+### Observation Space
+
+The observation space is a Dict with GoalEnv-compatible keys:
+
+| Key              | Shape       | Description |
+|------------------|-------------|-------------|
+| `observation`    | `(27,)`     | Joint pos (6) + joint vel (6) + EE xyz (3) + control targets (6) + target geom xyz (3) + target site xyz (3) + padding (3) |
+| `achieved_goal`  | `(3,)`      | End-effector position in world frame |
+| `desired_goal`   | `(3,)`      | Target position in world frame |
+
+### Reward
+
+A mix of dense shaping and a sparse success bonus:
+
+```math
+R = \begin{cases}
+-\| \text{achieved} - \text{desired} \|_2, & \text{if } d > 4 \text{ cm}\\
+10.0, & \text{if } d < 4 \text{ cm}
+\end{cases}
+```
+
+### Termination / Truncation
+
+- **Termination:** Exact when the end-effector is within `4 cm` of the desired goal.
+- **Truncation:** Standard maximum episode limit of `500` timesteps.
+
+---
+
 ## `VS050-PickAndPlace-v0`
 
 ![Pick and Place Environment](../../../assets/pick_and_place.gif)
