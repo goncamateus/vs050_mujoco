@@ -119,6 +119,9 @@
 
   <!-- ===== World ===== -->
   <worldbody>
+    <!-- Camera: front view, looking into the cage -->
+    <camera name="front" pos="0 -4.5 2.5" xyaxes="1 0 0 0 -0.486 -0.874"/>
+
     <!-- Lighting: two overhead + one fill -->
     <light name="light_overhead" pos="0 0 1.8" dir="0 0 -1"
            directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>

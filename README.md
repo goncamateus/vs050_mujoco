@@ -38,6 +38,30 @@ env.close()
 
 *(You can test a random agent interacting with the environment by running `uv run python examples/random_agent.py`)*.
 
+## Stable-Baselines3 SAC Example
+
+You can train a Soft Actor-Critic (SAC) policy with Stable-Baselines3:
+
+```bash
+# Install optional RL dependencies
+uv sync --group rl
+
+# Optional: install Weights & Biases logger
+uv sync --group wandb
+
+# Train SAC
+uv run python examples/sb3_sac.py --train --total-timesteps 200000
+
+# Train SAC with W&B logging
+uv run python examples/sb3_sac.py --train --total-timesteps 200000 --wandb --wandb-project vs050-sac
+
+# Replay a trained policy
+uv run python examples/sb3_sac.py --play --model-path runs/sac_vs050/final_model
+```
+
+Logs, checkpoints, and models are saved under `runs/sac_vs050/` by default.
+If `--wandb` is enabled, metrics are also streamed to your Weights & Biases run.
+
 ---
 
 ## Documentation

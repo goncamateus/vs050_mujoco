@@ -22,3 +22,10 @@ dev = [
     "imageio>=2.37.3",
     "pytest>=9.0.2",
 ]
+rl = [
+    "stable-baselines3>=2.3.2",
+    "torch>=2.2.0",
+]
+wandb = [
+    "wandb>=0.17.7",
+]

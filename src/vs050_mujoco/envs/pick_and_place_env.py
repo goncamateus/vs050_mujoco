@@ -258,6 +258,14 @@ class PickAndPlaceEnv(gym.Env):
         if self.render_mode == "human":
             if self._viewer is None:
                 self._viewer = mujoco.viewer.launch_passive(self.model, self.data)
+                # Configure a free camera to see the whole cage from the front
+                cam = self._viewer.cam
+                cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+                cam.lookat[:] = [0.0, 0.0, 0.5]
+                cam.distance = 3.
+                cam.azimuth = 125.0
+                cam.elevation = -15.0
+                self._viewer.sync()
             self._viewer.sync()
         elif self.render_mode == "rgb_array":
             if self._renderer is None:
