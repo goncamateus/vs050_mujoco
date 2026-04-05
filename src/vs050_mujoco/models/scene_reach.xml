@@ -1,0 +1,34 @@
+<mujoco model="vs050_reach">
+  <!--
+    Reach scene: VS050 arm on a floor plane.
+    Used by the VS050-ReachPose-v0 environment.
+    Target goals are set programmatically in the environment code.
+  -->
+
+  <include file="vs050.xml"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+  </visual>
+
+  <asset>
+    <material name="mat_target" rgba="1 0.3 0.3 0.5" specular="0" shininess="0"/>
+  </asset>
+
+  <worldbody>
+    <!-- Translucent red sphere to visualize the goal -->
+    <geom name="target_marker"
+          pos="0.4 0 0.35"
+          type="sphere"
+          size="0.015"
+          material="mat_target"
+          contype="0" conaffinity="0" group="2"/>
+
+    <!-- Visual site at the same location for distance queries -->
+    <site name="target_site"
+          pos="0.4 0 0.35"
+          size="0.015"
+          rgba="1 0.3 0.3 0.3"
+          type="sphere"/>
+  </worldbody>
+</mujoco>

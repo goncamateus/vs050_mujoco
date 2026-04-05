@@ -154,3 +154,5 @@ cython_debug/
 
 # Mujoco
 *MUJOCO_LOG.TXT
+
+runs/
