@@ -27,6 +27,7 @@ from stable_baselines3.common.callbacks import (
 )
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
+import gymnasium as gym
 
 
 ENV_ID = "VS050-ReachPose-v0"
@@ -44,16 +45,34 @@ def make_vec_env(
     render_mode: str | None = None,
     seed: int | None = None,
     start_index: int = 0,
+    video_folder: str | None = None,
+    video_episodes: int = 100,
 ):
-    """Create a vectorized environment."""
+    """Create a vectorized environment with video recording for the first env."""
 
     def make_env_fn(rank):
         def _init():
-            env = gym.make(ENV_ID, render_mode=render_mode)
+            # Only record video for the first environment (rank 0)
+            env_render_mode = render_mode
+            if rank == 0 and video_folder is not None:
+                env_render_mode = "rgb_array"
+
+            env = gym.make(ENV_ID, render_mode=env_render_mode)
+            
             # Set seed for reproducibility
             if seed is not None:
                 env.reset(seed=seed + rank)
-            return env
+            
+            # Wrap first environment with video recording
+            if rank == 0 and video_folder is not None:
+                env = gym.wrappers.RecordVideo(
+                    env,
+                    video_folder,
+                    episode_trigger=lambda x: x % video_episodes == 0,
+                    name_prefix=f"vs050-her-rank{rank}",
+                )
+            
+            return Monitor(env)
 
         return _init
 
@@ -87,7 +106,7 @@ def _maybe_setup_wandb(args: argparse.Namespace, out_dir: Path):
         },
         tags=tags,
         sync_tensorboard=True,
-        monitor_gym=False,
+        monitor_gym=True,
         save_code=True,
     )
     wandb_cb = WandbCallback(
@@ -111,10 +130,18 @@ def train(args: argparse.Namespace) -> Path:
 
     # Create vectorized environments
     train_env = make_vec_env(
-        n_envs=args.num_envs, vec_env_cls=vec_env_cls, render_mode=None, seed=seed
+        n_envs=args.num_envs, 
+        vec_env_cls=vec_env_cls, 
+        render_mode=None, 
+        seed=seed,
+        video_folder=str(out_dir / "videos") if args.train else None,
+        video_episodes=50,
     )
     eval_env = make_vec_env(
-        n_envs=args.num_eval_envs, vec_env_cls=vec_env_cls, render_mode=None, seed=seed
+        n_envs=args.num_eval_envs, 
+        vec_env_cls=vec_env_cls, 
+        render_mode=None, 
+        seed=seed
     )
     run, wandb_cb = _maybe_setup_wandb(args, out_dir)
 
