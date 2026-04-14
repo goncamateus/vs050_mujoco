@@ -52,17 +52,19 @@ def make_vec_env(
 
     def make_env_fn(rank):
         def _init():
-            # Only record video for the first environment (rank 0)
+            # Determine the render mode for this environment
+            # All environments must use the same render_mode to avoid AssertionError in SubprocVecEnv
             env_render_mode = render_mode
-            if rank == 0 and video_folder is not None:
+            if video_folder is not None:
+                # When recording video, we need rgb_array mode for the RecordVideo wrapper
                 env_render_mode = "rgb_array"
 
             env = gym.make(ENV_ID, render_mode=env_render_mode)
-            
+
             # Set seed for reproducibility
             if seed is not None:
                 env.reset(seed=seed + rank)
-            
+
             # Wrap first environment with video recording
             if rank == 0 and video_folder is not None:
                 env = gym.wrappers.RecordVideo(
@@ -71,7 +73,7 @@ def make_vec_env(
                     episode_trigger=lambda x: x % video_episodes == 0,
                     name_prefix=f"vs050-her-rank{rank}",
                 )
-            
+
             return Monitor(env)
 
         return _init
@@ -130,18 +132,15 @@ def train(args: argparse.Namespace) -> Path:
 
     # Create vectorized environments
     train_env = make_vec_env(
-        n_envs=args.num_envs, 
-        vec_env_cls=vec_env_cls, 
-        render_mode=None, 
+        n_envs=args.num_envs,
+        vec_env_cls=vec_env_cls,
+        render_mode=None,
         seed=seed,
         video_folder=str(out_dir / "videos") if args.train else None,
         video_episodes=50,
     )
     eval_env = make_vec_env(
-        n_envs=args.num_eval_envs, 
-        vec_env_cls=vec_env_cls, 
-        render_mode=None, 
-        seed=seed
+        n_envs=args.num_eval_envs, vec_env_cls=vec_env_cls, render_mode=None, seed=seed
     )
     run, wandb_cb = _maybe_setup_wandb(args, out_dir)
 

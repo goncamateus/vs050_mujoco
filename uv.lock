@@ -2236,6 +2236,7 @@ dev = [
 ]
 rl = [
     { name = "gymnasium", extra = ["other"] },
+    { name = "moviepy" },
     { name = "stable-baselines3" },
     { name = "torch" },
 ]
@@ -2257,6 +2258,7 @@ dev = [
 ]
 rl = [
     { name = "gymnasium", extras = ["other"], specifier = ">=1.2.3" },
+    { name = "moviepy", specifier = ">=2.2.1" },
     { name = "stable-baselines3", specifier = ">=2.3.2" },
     { name = "torch", specifier = ">=2.2.0" },
 ]
