@@ -48,6 +48,7 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         "render_modes": [
             "human",
             "rgb_array",
+            "depth_array",
         ],
     }
 
@@ -141,7 +142,7 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         )
 
         self.metadata = {
-            "render_modes": ["human", "rgb_array"],
+            "render_modes": ["human", "rgb_array", "depth_array"],
             "render_fps": int(np.round(1.0 / self.dt)),
         }
 
