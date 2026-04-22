@@ -1,300 +1,264 @@
 """
 ReachPose Gymnasium Environment for DENSO VS050 robot arm.
 
-A 6-DoF robotic arm must reach a target 3D position with its end-effector.
-Designed for use with Hindsight Experience Replay (HER):
-  - Implements gymnasium.GoalEnv (Dict obs with achieved_goal / desired_goal).
-  - Provides a reward function that HER can re-label.
+Refactored to inherit from gymnasium.envs.mujoco.MujocoEnv.
+Uses potential-based reward shaping (Ng, 1999).
 """
+
 from __future__ import annotations
 
 import os
-import numpy as np
+
 import mujoco
-import gymnasium as gym
-from gymnasium import spaces
+import numpy as np
+from gymnasium import spaces, utils
+from gymnasium.envs.mujoco import MujocoEnv
 
-
-# gymnasium.GoalEnv was removed in v1.0; provide minimal compatible interface.
-class _GoalEnvCompat(gym.Env):
-    """Compatibility shim for gymnasium.GoalEnv (removed in gymnasium 1.0+)."""
-    def compute_reward(
-        self, achieved_goal, desired_goal, info
-    ) -> np.ndarray | float: ...
-
-
-# Path to the MuJoCo XML scene
 _SCENE_XML = os.path.join(os.path.dirname(__file__), "..", "models", "scene_reach.xml")
 
 _N_ARM_JOINTS = 6
 _HOME_QPOS = np.array([0.0, 0.0, np.pi / 2, 0.0, 0.0, 0.0], dtype=np.float64)
 
-# Reachable workspace volume (meters) — conservative envelope for the VS050
 _WORKSPACE_LOW = np.array([-0.45, -0.45, 0.08], dtype=np.float64)
 _WORKSPACE_HIGH = np.array([0.45, 0.45, 0.55], dtype=np.float64)
 
-_SUCCESS_DIST = 0.04  # 4 cm
+DEFAULT_CAMERA_CONFIG = {
+    "lookat": np.array([0.0, 0.0, 0.3]),
+    "distance": 1.8,
+    "azimuth": 135.0,
+    "elevation": -20.0,
+}
 
 
-class ReachPoseEnv(_GoalEnvCompat):
+class ReachPoseEnv(MujocoEnv, utils.EzPickle):
     """
-    Gymnasium GoalEnv for a reach-pose task with the DENSO VS050 arm.
+    VS050 reach-pose environment using MujocoEnv.
 
-    **Observation** (Dict):
-        - observation (27): joint pos (6) + joint vel (6) + end-effector xyz (3)
-                           + control target (6) + target-visual xyz (3) +
-                           + target_site xyz (3) + padding (3)
-        - achieved_goal (3): end-effector position in world frame
-        - desired_goal (3): target position in world frame
+    Observation (flat Box):
+        [qpos, qvel, ee_pos, goal_pos, ee_to_goal]
 
-    **Action** (6-dim float32, clipped to [-1, 1]):
-        - delta joint targets (6) -> scaled by max_delta per joint
+    Action (Box(-1, 1, (6,), float32)):
+        Delta joint targets scaled per joint.
 
-    **Reward** (sparse + shaped):
-        r = -||achieved - desired|| + 10.0 when success
-
-    **Termination**:
-        - Success: end-effector within _SUCCESS_DIST of desired_goal
-        - Truncation: step limit exceeded
+    Reward:
+        Potential-based shaping + control cost + success bonus.
     """
 
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
+    metadata = {
+        "render_modes": [
+            "human",
+            "rgb_array",
+        ],
+    }
 
     def __init__(
         self,
-        render_mode: str | None = None,
-        max_episode_steps: int = 500,
+        xml_file: str = _SCENE_XML,
+        frame_skip: int = 5,
+        default_camera_config: dict[str, float | np.ndarray] = DEFAULT_CAMERA_CONFIG,
         max_delta_per_joint: list[float] | None = None,
+        gamma_shaping: float = 1.00,
+        success_dist: float = 0.01,
+        success_reward: float = 100.0,
+        ctrl_cost_weight: float = 1e-3,
+        reset_noise_scale: float = 0.01,
+        **kwargs,
     ):
-        super().__init__()
-        self.render_mode = render_mode
-        self.max_episode_steps = max_episode_steps
-        self._step_count = 0
-
-        # Load model
-        xml_path = os.path.abspath(_SCENE_XML)
-        self.model = mujoco.MjModel.from_xml_path(xml_path)
-        self.data = mujoco.MjData(self.model)
-
-        # Cache IDs
-        self._ee_site_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_SITE, "attachment_site"
-        )
-        self._target_geom_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_GEOM, "target_marker"
-        )
-        self._target_site_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_SITE, "target_site"
+        utils.EzPickle.__init__(
+            self,
+            xml_file,
+            frame_skip,
+            default_camera_config,
+            max_delta_per_joint,
+            gamma_shaping,
+            success_dist,
+            success_reward,
+            ctrl_cost_weight,
+            reset_noise_scale,
+            **kwargs,
         )
 
-        # Joint addresses
+        fullpath = os.path.abspath(xml_file)
+        MujocoEnv.__init__(
+            self,
+            fullpath,
+            frame_skip,
+            observation_space=None,
+            default_camera_config=default_camera_config,
+            **kwargs,
+        )
+
+        # Cache MuJoCo IDs
+        self._ee_site_id = self._get_id(mujoco.mjtObj.mjOBJ_SITE, "attachment_site")
+        self._target_geom_id = self._get_id(mujoco.mjtObj.mjOBJ_GEOM, "target_marker")
+        self._target_site_id = self._get_id(mujoco.mjtObj.mjOBJ_SITE, "target_site")
+
         self._arm_qpos_addrs = [
             self.model.jnt_qposadr[
-                mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_{i+1}")
+                self._get_id(mujoco.mjtObj.mjOBJ_JOINT, f"joint_{i + 1}")
             ]
             for i in range(_N_ARM_JOINTS)
         ]
         self._arm_qvel_addrs = [
             self.model.jnt_dofadr[
-                mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_{i+1}")
+                self._get_id(mujoco.mjtObj.mjOBJ_JOINT, f"joint_{i + 1}")
             ]
             for i in range(_N_ARM_JOINTS)
         ]
-
-        # Actuator addresses
         self._arm_act_ids = [
-            mujoco.mj_name2id(
-                self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"act_joint_{i+1}"
-            )
+            self._get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, f"act_joint_{i + 1}")
             for i in range(_N_ARM_JOINTS)
         ]
-        self._arm_ctrl_lo = np.array([
-            self.model.actuator_ctrlrange[idx, 0] for idx in self._arm_act_ids
-        ])
-        self._arm_ctrl_hi = np.array([
-            self.model.actuator_ctrlrange[idx, 1] for idx in self._arm_act_ids
-        ])
+
+        # Override init state to home position
+        self.init_qpos[self._arm_qpos_addrs] = _HOME_QPOS
+        self.init_qvel[self._arm_qvel_addrs] = 0.0
 
         # Per-joint action scale
         self._max_delta = np.array(
-            max_delta_per_joint if max_delta_per_joint else [0.08, 0.08, 0.08, 0.10, 0.10, 0.15],
+            max_delta_per_joint
+            if max_delta_per_joint
+            else [0.08, 0.08, 0.08, 0.10, 0.10, 0.15],
             dtype=np.float64,
         )
 
-        # ---- Observation spaces (GoalEnv Dict) ----
-        obs_dim = 27  # joint_pos(6) + joint_vel(6) + ee_pos(3) + ctrl(6) + target_geom(3) + target_site(3)
-        self.observation_space = spaces.Dict(
-            dict(
-                observation=spaces.Box(
-                    -np.inf, np.inf, shape=(obs_dim,), dtype=np.float32
-                ),
-                achieved_goal=spaces.Box(
-                    -np.inf, np.inf, shape=(3,), dtype=np.float32
-                ),
-                desired_goal=spaces.Box(
-                    -np.inf, np.inf, shape=(3,), dtype=np.float32
-                ),
-            )
-        )
+        # Parameters
+        self.gamma_shaping = gamma_shaping
+        self.success_dist = success_dist
+        self.success_reward = success_reward
+        self.ctrl_cost_weight = ctrl_cost_weight
+        self._reset_noise_scale = reset_noise_scale
+
+        # Override action space: delta control in [-1, 1]^6
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(_N_ARM_JOINTS,), dtype=np.float32
         )
 
-        # MuJoCo viewer / renderer (lazy init)
-        self._viewer = None
-        self._renderer = None
+        # Observation space: qpos + qvel + ee_pos(3) + goal_pos(3) + rel_pos(3)
+        obs_dim = self.data.qpos.size + self.data.qvel.size + 9
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+        )
 
-    # ------------------------------------------------------------------
-    # Gym API
-    # ------------------------------------------------------------------
+        self.metadata = {
+            "render_modes": ["human", "rgb_array"],
+            "render_fps": int(np.round(1.0 / self.dt)),
+        }
 
-    def reset(self, *, seed=None, options=None):
-        super().reset(seed=seed)
-        self._step_count = 0
+    def _get_id(self, obj_type, name: str) -> int:
+        """Get MuJoCo ID or raise ValueError."""
+        id_ = mujoco.mj_name2id(self.model, obj_type, name)
+        if id_ < 0:
+            raise ValueError(f"Name '{name}' not found in model for type {obj_type}")
+        return id_
 
-        mujoco.mj_resetData(self.model, self.data)
+    def _get_ee_pos(self) -> np.ndarray:
+        return self.data.site_xpos[self._ee_site_id].copy()
 
-        # Arm to home
-        for i, addr in enumerate(self._arm_qpos_addrs):
-            self.data.qpos[addr] = _HOME_QPOS[i]
-        for i, idx in enumerate(self._arm_act_ids):
-            self.data.ctrl[idx] = _HOME_QPOS[i]
+    def _get_goal_pos(self) -> np.ndarray:
+        return self.data.geom_xpos[self._target_geom_id].copy()
 
-        # Sample a new goal inside the workspace
-        rng = self.np_random
-        goal = rng.uniform(_WORKSPACE_LOW, _WORKSPACE_HIGH)
-        self._set_goal(goal)
-
+    def _set_goal(self, goal: np.ndarray):
+        self.model.geom_pos[self._target_geom_id] = goal
         mujoco.mj_forward(self.model, self.data)
 
-        obs = self._get_obs()
-        info = self._get_info()
-        return obs, info
+    def _get_obs(self) -> np.ndarray:
+        qpos = self.data.qpos.copy()
+        qvel = self.data.qvel.copy()
+        ee_pos = self._get_ee_pos()
+        goal_pos = self._get_goal_pos()
+        rel_pos = goal_pos - ee_pos
+        return np.concatenate([qpos, qvel, ee_pos, goal_pos, rel_pos]).astype(
+            np.float32
+        )
 
-    def step(self, action: np.ndarray):
-        action = np.clip(action, -1.0, 1.0).astype(np.float64)
+    def _get_reset_info(self) -> dict:
+        return {
+            "ee_pos": self._get_ee_pos().tolist(),
+            "goal": self._get_goal_pos().tolist(),
+        }
 
-        # Delta joint targets
+    def reset_model(self):
+        noise = self.np_random.uniform(
+            -self._reset_noise_scale,
+            self._reset_noise_scale,
+            size=self.model.nq,
+        )
+        qpos = self.init_qpos + noise
+        qvel = self.init_qvel + noise
+
+        self.set_state(qpos, qvel)
+
+        # Set initial ctrl targets to current joint positions
+        self.data.ctrl[self._arm_act_ids] = np.clip(
+            qpos[self._arm_qpos_addrs], self._arm_ctrl_lo, self._arm_ctrl_hi
+        )
+
+        # Sample new goal
+        goal = self.np_random.uniform(_WORKSPACE_LOW, _WORKSPACE_HIGH)
+        self._set_goal(goal)
+
+        return self._get_obs()
+
+    def step(self, action):
+        action = np.clip(action, -1.0, 1.0)
+
+        # Previous distance for shaping
+        ee_pos_prev = self._get_ee_pos()
+        goal_pos = self._get_goal_pos()
+        d_prev = np.linalg.norm(ee_pos_prev - goal_pos)
+
+        # Delta control
         arm_delta = action * self._max_delta
-        current_targets = np.array([
-            self.data.ctrl[idx] for idx in self._arm_act_ids
-        ])
+        current_targets = self.data.ctrl[self._arm_act_ids].copy()
         new_targets = np.clip(
             current_targets + arm_delta, self._arm_ctrl_lo, self._arm_ctrl_hi
         )
-        for i, idx in enumerate(self._arm_act_ids):
-            self.data.ctrl[idx] = new_targets[i]
 
-        # 5 physics steps per env step => 0.01 s
-        for _ in range(5):
-            mujoco.mj_step(self.model, self.data)
+        ctrl = self.data.ctrl.copy()
+        ctrl[self._arm_act_ids] = new_targets
 
-        self._step_count += 1
+        self.do_simulation(ctrl, self.frame_skip)
 
         obs = self._get_obs()
-        achieved = self._get_achieved_goal()
-        desired = obs["desired_goal"]
-        reward = self.compute_reward(achieved, desired, {})
-        success = self._check_success(achieved, desired)
+        ee_pos = self._get_ee_pos()
+        d_curr = np.linalg.norm(ee_pos - goal_pos)
+
+        # Potential-based shaping: F = gamma * Phi(s') - Phi(s), Phi = -d
+        shaping = d_prev - self.gamma_shaping * d_curr
+        ctrl_cost = self.ctrl_cost_weight * np.sum(np.square(action))
+        success = d_curr < self.success_dist
+        success_bonus = self.success_reward if success else 0.0
+
+        reward = shaping - ctrl_cost + success_bonus
 
         terminated = success
-        truncated = self._step_count >= self.max_episode_steps
+        truncated = False
 
-        info = self._get_info()
-        info["is_success"] = success
+        info = {
+            "distance": d_curr,
+            "shaping": shaping,
+            "ctrl_cost": ctrl_cost,
+            "success": success,
+            "ee_pos": ee_pos.tolist(),
+            "goal": goal_pos.tolist(),
+        }
 
         if self.render_mode == "human":
             self.render()
 
         return obs, reward, terminated, truncated, info
 
-    def render(self):
-        if self.render_mode == "human":
-            if self._viewer is None:
-                self._viewer = mujoco.viewer.launch_passive(self.model, self.data)
-                cam = self._viewer.cam
-                cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-                cam.lookat[:] = [0.0, 0.0, 0.3]
-                cam.distance = 1.8
-                cam.azimuth = 135.0
-                cam.elevation = -20.0
-                self._viewer.sync()
-            self._viewer.sync()
-        elif self.render_mode == "rgb_array":
-            if self._renderer is None:
-                self._renderer = mujoco.Renderer(self.model, height=480, width=640)
-            self._renderer.update_scene(self.data)
-            return self._renderer.render()
-
-    def close(self):
-        if self._viewer is not None:
-            self._viewer.close()
-            self._viewer = None
-        if self._renderer is not None:
-            del self._renderer
-            self._renderer = None
-
-    # ------------------------------------------------------------------
-    # GoalEnv API
-    # ------------------------------------------------------------------
-
-    def _get_achieved_goal(self) -> np.ndarray:
-        return self.data.site_xpos[self._ee_site_id].copy()
-
-    def _get_obs(self) -> dict:
-        joint_pos = np.array([self.data.qpos[a] for a in self._arm_qpos_addrs])
-        joint_vel = np.array([self.data.qvel[a] for a in self._arm_qvel_addrs])
-        ee_pos = self._get_achieved_goal()
-        ctrl_targets = np.array([self.data.ctrl[idx] for idx in self._arm_act_ids])
-        target_geom_xyz = self.data.geom_xpos[self._target_geom_id].copy()
-        target_site_xyz = self.data.site_xpos[self._target_site_id].copy()
-
-        # Pad to a fixed dimension so observations can grow without breaking trained policies
-        padding = np.zeros(27 - len(joint_pos) - len(joint_vel) - len(ee_pos)
-                           - len(ctrl_targets) - len(target_geom_xyz) - len(target_site_xyz),
-                           dtype=np.float64)
-        obs_vec = np.concatenate([
-            joint_pos, joint_vel, ee_pos, ctrl_targets,
-            target_geom_xyz, target_site_xyz, padding,
-        ]).astype(np.float32)
-
-        return dict(
-            observation=obs_vec,
-            achieved_goal=ee_pos.astype(np.float32),
-            desired_goal=target_geom_xyz.astype(np.float32),
+    @property
+    def _arm_ctrl_lo(self) -> np.ndarray:
+        return np.array(
+            [self.model.actuator_ctrlrange[idx, 0] for idx in self._arm_act_ids],
+            dtype=np.float64,
         )
 
-    def _get_info(self) -> dict:
-        return {
-            "ee_pos": self._get_achieved_goal().tolist(),
-            "goal": self.data.geom_xpos[self._target_geom_id].copy().tolist(),
-            "step": self._step_count,
-        }
-
-    def compute_reward(
-        self, achieved_goal, desired_goal, info
-    ) -> np.ndarray | float:
-        """
-        Reward used by the GoalEnv API. Must accept both single and batched goals.
-        Used by SB3 HER to re-label transitions with different desired goals.
-        """
-        d = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
-        reward = -d
-        if np.isscalar(d) or d.shape == ():
-            if d < _SUCCESS_DIST:
-                reward = 10.0  # sparse success bonus (single transition)
-        else:
-            reward = np.where(d < _SUCCESS_DIST, 10.0, reward)
-        return reward
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _set_goal(self, goal: np.ndarray):
-        """Place the goal marker geom and site at the given world position."""
-        self.model.geom_pos[self._target_geom_id] = goal
-        mujoco.mj_forward(self.model, self.data)
-
-    def _check_success(self, achieved: np.ndarray, desired: np.ndarray) -> bool:
-        return bool(np.linalg.norm(achieved - desired) < _SUCCESS_DIST)
+    @property
+    def _arm_ctrl_hi(self) -> np.ndarray:
+        return np.array(
+            [self.model.actuator_ctrlrange[idx, 1] for idx in self._arm_act_ids],
+            dtype=np.float64,
+        )
