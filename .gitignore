@@ -156,3 +156,4 @@ cython_debug/
 *MUJOCO_LOG.TXT
 
 runs/
+wandb/
