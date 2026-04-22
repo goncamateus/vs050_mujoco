@@ -58,7 +58,6 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         frame_skip: int = 5,
         default_camera_config: dict[str, float | np.ndarray] = DEFAULT_CAMERA_CONFIG,
         max_delta_per_joint: list[float] | None = None,
-        gamma_shaping: float = 1.00,
         success_dist: float = 0.01,
         success_reward: float = 100.0,
         ctrl_cost_weight: float = 1e-3,
@@ -71,7 +70,6 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
             frame_skip,
             default_camera_config,
             max_delta_per_joint,
-            gamma_shaping,
             success_dist,
             success_reward,
             ctrl_cost_weight,
@@ -124,7 +122,6 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         )
 
         # Parameters
-        self.gamma_shaping = gamma_shaping
         self.success_dist = success_dist
         self.success_reward = success_reward
         self.ctrl_cost_weight = ctrl_cost_weight
@@ -204,11 +201,6 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
 
-        # Previous distance for shaping
-        ee_pos_prev = self._get_ee_pos()
-        goal_pos = self._get_goal_pos()
-        d_prev = np.linalg.norm(ee_pos_prev - goal_pos)
-
         # Delta control
         arm_delta = action * self._max_delta
         current_targets = self.data.ctrl[self._arm_act_ids].copy()
@@ -221,24 +213,22 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
 
         self.do_simulation(ctrl, self.frame_skip)
 
+        goal_pos = self._get_goal_pos()
         obs = self._get_obs()
         ee_pos = self._get_ee_pos()
         d_curr = np.linalg.norm(ee_pos - goal_pos)
 
-        # Potential-based shaping: F = gamma * Phi(s') - Phi(s), Phi = -d
-        shaping = d_prev - self.gamma_shaping * d_curr
         ctrl_cost = self.ctrl_cost_weight * np.sum(np.square(action))
         success = d_curr < self.success_dist
         success_bonus = self.success_reward if success else 0.0
 
-        reward = shaping - ctrl_cost + success_bonus
+        reward = -d_curr - ctrl_cost + success_bonus
 
         terminated = success
         truncated = False
 
         info = {
             "distance": d_curr,
-            "shaping": shaping,
             "ctrl_cost": ctrl_cost,
             "success": success,
             "ee_pos": ee_pos.tolist(),
