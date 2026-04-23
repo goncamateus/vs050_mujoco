@@ -5,7 +5,7 @@
       - Transparent cubic cage  (1.2 m × 1.2 m × 1.2 m)
       - Wood floor box          (only inside the cage)
       - Robot at cage centre    (0, 0, 0)
-      - 3 pickable cube objects with free joints
+      - 1 pickable cube object with free joint
       - Green target zone site
   -->
 
@@ -29,10 +29,8 @@
     <material name="mat_glass" rgba="0.75 0.92 1.0 0.12"
               specular="0.9" shininess="0.9" reflectance="0.3"/>
 
-    <!-- Object materials -->
-    <material name="mat_red"    rgba="0.85 0.15 0.10 1"/>
-    <material name="mat_blue"   rgba="0.12 0.35 0.85 1"/>
-    <material name="mat_yellow" rgba="0.95 0.80 0.08 1"/>
+    <!-- Object material -->
+    <material name="mat_red" rgba="0.85 0.15 0.10 1"/>
 
     <!-- Target zone material -->
     <material name="mat_target" rgba="0.10 0.90 0.30 0.45"/>
@@ -343,45 +341,13 @@
       </body> <!-- J1 -->
     </body> <!-- base_link -->
 
-    <!-- ===== Pickable objects (contype=2, conaffinity=3 → collide with floor & cage) ===== -->
-    <!--
-      conaffinity=3 (bits 1+2) → objects react to contype=1 (floor) and contype=2 (cage walls)
-      contype=2                → objects collide with each other (conaffinity bit 2) and with
-                                 gripper pads (gripper pads use contype=1, conaffinity=1 by default
-                                 but we override below via the pad geoms)
-    -->
-
-    <!-- Object 0: red cube -->
+    <!-- ===== Pickable object (contype=2, conaffinity=3 → collide with floor & cage) ===== -->
     <body name="object0" pos="0.25 -0.20 0.03">
       <freejoint name="object0_joint"/>
       <geom name="object0_geom"
             type="box" size="0.025 0.025 0.025"
             mass="0.05"
             material="mat_red"
-            contype="2" conaffinity="3"
-            friction="0.8 0.005 0.0001"
-            solimp="0.95 0.99 0.001" solref="0.01 1"/>
-    </body>
-
-    <!-- Object 1: blue cube -->
-    <body name="object1" pos="-0.30 0.15 0.03">
-      <freejoint name="object1_joint"/>
-      <geom name="object1_geom"
-            type="box" size="0.025 0.025 0.025"
-            mass="0.05"
-            material="mat_blue"
-            contype="2" conaffinity="3"
-            friction="0.8 0.005 0.0001"
-            solimp="0.95 0.99 0.001" solref="0.01 1"/>
-    </body>
-
-    <!-- Object 2: yellow cube -->
-    <body name="object2" pos="0.10 0.35 0.03">
-      <freejoint name="object2_joint"/>
-      <geom name="object2_geom"
-            type="box" size="0.025 0.025 0.025"
-            mass="0.05"
-            material="mat_yellow"
             contype="2" conaffinity="3"
             friction="0.8 0.005 0.0001"
             solimp="0.95 0.99 0.001" solref="0.01 1"/>
@@ -442,9 +408,7 @@
   <keyframe>
     <key name="home"
          qpos="0 0 1.5707963267948966 0 0 0  0 0
-               0.25 -0.20 0.03  1 0 0 0
-              -0.30  0.15 0.03  1 0 0 0
-               0.10  0.35 0.03  1 0 0 0"
+               0.25 -0.20 0.03  1 0 0 0"
          ctrl="0 0 1.5707963267948966 0 0 0  0"/>
   </keyframe>
 

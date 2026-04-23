@@ -1,6 +1,7 @@
 """Pick-and-Place Gymnasium Environment for DENSO VS050 + Robotiq 2F-85.
 
 Refactored to inherit from gymnasium.envs.mujoco.MujocoEnv.
+Single-object variant.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ _SCENE_XML = os.path.join(
 # Robot joints (6-DoF arm + 1 gripper tendon actuator = 7 total)
 _N_ARM_JOINTS = 6
 _N_ACTUATORS = 7  # 6 arm + 1 gripper
-_N_OBJECTS = 3
 
 # Home qpos for arm joints (from keyframe)
 _HOME_QPOS = np.array([0.0, 0.0, np.pi / 2, 0.0, 0.0, 0.0], dtype=np.float64)
@@ -32,9 +32,6 @@ _Z_OBJ = 0.03  # initial z for objects (on the wood floor)
 
 # Object half-size (cube)
 _OBJ_HALF = 0.025
-
-# Minimum distance between objects at spawn
-_MIN_OBJ_DIST = 0.12
 
 # Target zone (should match target_site in XML)
 _TARGET_POS = np.array([0.30, 0.30, _OBJ_HALF], dtype=np.float64)
@@ -54,27 +51,27 @@ DEFAULT_CAMERA_CONFIG = {
 class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     """Pick-and-place task with the DENSO VS050 arm and Robotiq 2F-85 gripper.
 
-    **Observation** (37-dim float32):
+    **Observation** (23-dim float32):
         - joint positions  (6)
         - joint velocities (6)
         - gripper opening  (1)  – normalised in [0, 1]
-        - object positions (3 × 3 = 9)
-        - object quats     (3 × 4 = 12)
+        - object position  (3)
+        - object quat      (4)
         - target position  (3)
-                        = 37-dim
+                        = 23-dim
 
     **Action** (7-dim float32, clipped to [-1, 1]):
         - delta joint targets (6)  → scaled by 0.05 rad/step
         - gripper command     (1)  → mapped to [0, 255] (0=open, 1=closed)
 
     **Reward** (dense):
-        r = -d(pinch → nearest object)
-          + 0.5 * grasping_bonus
-          - d(nearest grasped object → target)
-          + 10.0 * success
+        r = -d(pinch → object)
+          + grasp_bonus
+          - d(object → target)
+          + success_bonus
 
     **Termination**:
-        - Success: any object within _SUCCESS_DIST of target
+        - Success: object within _SUCCESS_DIST of target
         - Truncation: handled by TimeLimit wrapper (max_episode_steps)
     """
 
@@ -99,8 +96,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         reset_noise_scale: float = 0.0,
         **kwargs,
     ):
-        utils.EzPickle.__init__(
-            self,
+        self._init_ezpickle(
             xml_file,
             frame_skip,
             default_camera_config,
@@ -108,23 +104,13 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
             reset_noise_scale,
             **kwargs,
         )
-        fullpath = os.path.abspath(xml_file)
-        MujocoEnv.__init__(
-            self,
-            fullpath,
-            frame_skip,
-            observation_space=None,
-            default_camera_config=default_camera_config,
-            **kwargs,
-        )
+        self._init_mujoco_env(xml_file, frame_skip, default_camera_config, **kwargs)
         self._init_cache_ids()
         self._init_state(target_pos, reset_noise_scale)
 
         self._is_grasped = False  # track grasp state
 
-        obs_dim = (
-            _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + _N_OBJECTS * 3 + _N_OBJECTS * 4 + 3
-        )
+        obs_dim = _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + 3 + 4 + 3
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
@@ -140,19 +126,35 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     # Sub-initialisers
     # -------------------------------------------------------------------
 
+    def _init_ezpickle(self, xml_file, frame_skip, camera, target_pos, noise, **kw):
+        utils.EzPickle.__init__(
+            self,
+            xml_file,
+            frame_skip,
+            camera,
+            target_pos,
+            noise,
+            **kw,
+        )
+
+    def _init_mujoco_env(self, xml_file, frame_skip, camera, **kw):
+        fullpath = os.path.abspath(xml_file)
+        MujocoEnv.__init__(
+            self,
+            fullpath,
+            frame_skip,
+            observation_space=None,
+            default_camera_config=camera,
+            **kw,
+        )
+
     def _init_cache_ids(self):
         self._pinch_id = self._get_id(mujoco.mjtObj.mjOBJ_SITE, "pinch")
         self._target_id = self._get_id(mujoco.mjtObj.mjOBJ_SITE, "target_site")
 
-        self._obj_body_ids = [
-            self._get_id(mujoco.mjtObj.mjOBJ_BODY, f"object{i}")
-            for i in range(_N_OBJECTS)
-        ]
-        self._obj_qpos_addrs = [
-            self.model.jnt_qposadr[
-                self._get_id(mujoco.mjtObj.mjOBJ_JOINT, f"object{i}_joint")
-            ]
-            for i in range(_N_OBJECTS)
+        self._obj_body_id = self._get_id(mujoco.mjtObj.mjOBJ_BODY, "object0")
+        self._obj_qpos_addr = self.model.jnt_qposadr[
+            self._get_id(mujoco.mjtObj.mjOBJ_JOINT, "object0_joint")
         ]
         self._arm_qpos_addrs = [
             self.model.jnt_qposadr[
@@ -220,13 +222,10 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         return np.array([self.data.ctrl[self._gripper_act_id] / 255.0])
 
     def _get_object_obs(self) -> np.ndarray:
-        obj_pos = []
-        obj_quat = []
-        for i in range(_N_OBJECTS):
-            addr = self._obj_qpos_addrs[i]
-            obj_pos.append(self.data.qpos[addr : addr + 3])
-            obj_quat.append(self.data.qpos[addr + 3 : addr + 7])
-        return np.concatenate(obj_pos + obj_quat)
+        addr = self._obj_qpos_addr
+        obj_pos = self.data.qpos[addr : addr + 3]
+        obj_quat = self.data.qpos[addr + 3 : addr + 7]
+        return np.concatenate([obj_pos, obj_quat])
 
     def _get_target_obs(self) -> np.ndarray:
         return self._target_pos
@@ -238,8 +237,8 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _get_pinch_pos(self) -> np.ndarray:
         return self.data.site_xpos[self._pinch_id].copy()
 
-    def _get_obj_pos(self, idx: int) -> np.ndarray:
-        addr = self._obj_qpos_addrs[idx]
+    def _get_obj_pos(self) -> np.ndarray:
+        addr = self._obj_qpos_addr
         return self.data.qpos[addr : addr + 3].copy()
 
     # ===================================================================
@@ -247,43 +246,14 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     # ===================================================================
 
     def _compute_reward(self) -> float:
-        pinch = self._get_pinch_pos()
-        nearest_idx, d_reach = self._get_nearest_object_distance(pinch)
-        nearest_pos = self._get_obj_pos(nearest_idx)
-        grasp_bonus = self._get_grasp_bonus(d_reach, nearest_pos)
-        d_place = self._get_place_distance(nearest_pos)
-        success_bonus = self._get_success_bonus()
-        return float(-d_reach + grasp_bonus - d_place + success_bonus)
-
-    def _get_nearest_object_distance(self, pinch: np.ndarray) -> tuple[int, float]:
-        dists = np.array(
-            [np.linalg.norm(pinch - self._get_obj_pos(i)) for i in range(_N_OBJECTS)]
-        )
-        nearest_idx = int(np.argmin(dists))
-        return nearest_idx, dists[nearest_idx]
-
-    def _get_grasp_bonus(self, d_reach: float, nearest_pos: np.ndarray) -> float:
-        is_lifted = nearest_pos[2] > _Z_OBJ + 0.01
-        is_grasped = d_reach < 0.05 and is_lifted
-        reward = 0.0
-        if is_grasped and not self._is_grasped:
-            self._is_grasped = True
-            reward += 1.0
-        return reward
-
-    def _get_place_distance(self, nearest_pos: np.ndarray) -> float:
-        return float(np.linalg.norm(nearest_pos - self._target_pos))
-
-    def _get_success_bonus(self) -> float:
-        return 10.0 if self._check_success() else 0.0
+        obj_pos = self._get_obj_pos()
+        d_place = float(np.linalg.norm(obj_pos - self._target_pos))
+        return 100.0 if self._check_success() else -d_place
 
     def _check_success(self) -> bool:
-        """True if any object is within _SUCCESS_DIST of target."""
-        for i in range(_N_OBJECTS):
-            pos = self._get_obj_pos(i)
-            if np.linalg.norm(pos - self._target_pos) < _SUCCESS_DIST:
-                return True
-        return False
+        """True if object is within _SUCCESS_DIST of target."""
+        pos = self._get_obj_pos()
+        return float(np.linalg.norm(pos - self._target_pos)) < _SUCCESS_DIST
 
     # ===================================================================
     # Info helpers
@@ -292,7 +262,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _get_reset_info(self) -> dict:
         return {
             "pinch_pos": self._get_pinch_pos().tolist(),
-            "obj_positions": [self._get_obj_pos(i).tolist() for i in range(_N_OBJECTS)],
+            "obj_position": self._get_obj_pos().tolist(),
             "target_pos": self._target_pos.tolist(),
             "step": self._step_count,
         }
@@ -322,7 +292,8 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def reset_model(self):
         self._reset_simulation()
         self._reset_arm()
-        self._reset_objects()
+        self._reset_gripper()
+        self._reset_object()
         self._step_count = 0
         self._is_grasped = False
         return self._get_obs()
@@ -346,41 +317,35 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
             self._arm_ctrl_lo,
             self._arm_ctrl_hi,
         )
+
+    def _reset_gripper(self):
         self.data.ctrl[self._gripper_act_id] = 0.0
 
-    def _reset_objects(self):
-        placed: list[np.ndarray] = []
-        for obj_idx in range(_N_OBJECTS):
-            xy = self._sample_object_xy(placed)
-            self._place_object_at(obj_idx, xy)
-            placed.append(xy)
+    def _reset_object(self):
+        xy = self._sample_object_xy()
+        self._place_object_at(xy)
         mujoco.mj_forward(self.model, self.data)
 
-    def _sample_object_xy(self, placed: list[np.ndarray]) -> np.ndarray:
+    def _sample_object_xy(self) -> np.ndarray:
         for _ in range(1000):  # rejection sampling
             xy = self.np_random.uniform(
                 _XY_LOW + _OBJ_HALF, _XY_HIGH - _OBJ_HALF, size=2
             )
-            if self._is_invalid_spawn(xy, placed):
+            if self._is_invalid_spawn(xy):
                 continue
             return xy
-        # Fallback: fixed scatter positions
-        fallback = [
-            np.array([0.25, -0.20]),
-            np.array([-0.30, 0.15]),
-            np.array([0.10, 0.35]),
-        ][len(placed)]
-        return fallback
+        # Fallback
+        return np.array([0.25, -0.20])
 
-    def _is_invalid_spawn(self, xy: np.ndarray, placed: list[np.ndarray]) -> bool:
+    def _is_invalid_spawn(self, xy: np.ndarray) -> bool:
         if np.linalg.norm(xy) < _ROBOT_EXCLUSION_R:
             return True
         if np.linalg.norm(xy - self._target_pos[:2]) < _OBJ_HALF * 3:
             return True
-        return any(np.linalg.norm(xy - p) < _MIN_OBJ_DIST for p in placed)
+        return False
 
-    def _place_object_at(self, obj_idx: int, xy: np.ndarray):
-        addr = self._obj_qpos_addrs[obj_idx]
+    def _place_object_at(self, xy: np.ndarray):
+        addr = self._obj_qpos_addr
         self.data.qpos[addr : addr + 3] = [xy[0], xy[1], _Z_OBJ]
         self.data.qpos[addr + 3 : addr + 7] = [1.0, 0.0, 0.0, 0.0]
 
@@ -415,9 +380,16 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         truncated = False
 
         info = self._get_reset_info()
+        info["dist_place"] = reward if not success else 0.0
         info["is_success"] = success
 
         if self.render_mode == "human":
             self.render()
 
-        return obs, reward, terminated, truncated, info
+        return (
+            obs,
+            reward,
+            terminated,
+            truncated,
+            info,
+        )

@@ -50,8 +50,8 @@ Potential-based shaping plus control cost and sparse success bonus:
 
 A dense-reward environment where the agent must control the VS050 robot arm and a Robotiq 2F-85 gripper to pick up cubic objects and place them on a target marker. Inherits from `gymnasium.envs.mujoco.MujocoEnv`.
 
-* **Simulation:** The robot operates inside a transparent 1.2m³ glass cage with a wood floor. Three colored cubes (red, blue, yellow) spawn at random intervals within the cage area.
-* **Objective:** Move the gripper, securely grab an object, and bring it within `5 cm` of the green target site.
+* **Simulation:** The robot operates inside a transparent 1.2m³ glass cage with a wood floor. One red cube spawns at a random position within the cage area.
+* **Objective:** Move the gripper, securely grab the object, and bring it within `1 mm` of the green target site.
 
 ### Action Space
 
@@ -64,16 +64,16 @@ The action space is a `Box(-1.0, 1.0, (7,), float32)`.
 
 ### Observation Space
 
-The observation space is a `Box(-inf, inf, (37,), float32)`.
+The observation space is a `Box(-inf, inf, (23,), float32)`.
 
 | Indices | Description | Details |
 |---------|-------------|---------|
 | `0–5` | Joint positions (`qpos`) | The rotational position of the 6 robot joints (rad). |
 | `6–11`| Joint velocities (`qvel`) | The rotational velocity of the 6 robot joints (rad/s). |
 | `12`  | Gripper state | The normalized `[0, 1]` state of the gripper actuator. |
-| `13–21`| Object positions (x3) | XYZ Cartesian coordinates for each of the 3 spawnable objects. |
-| `22–33`| Object orientations (x3)| XYZW Quaternions for each of the 3 objects. |
-| `34–36`| Target position | XYZ Cartesian coordinates of the target drop zone. |
+| `13–15`| Object position | XYZ Cartesian coordinates of the spawnable object. |
+| `16–19`| Object orientation | XYZW Quaternion of the object. |
+| `20–22`| Target position | XYZ Cartesian coordinates of the target drop zone. |
 
 ### Reward
 
@@ -83,14 +83,14 @@ The reward heavily penalizes distance while reinforcing successful manipulation 
 R = -D_{\text{reach}} + B_{\text{grasp}} - D_{\text{place}} + B_{\text{success}}
 ```
 
-- **Reach Penalty ($D_{\text{reach}}$):** Negative Euclidean distance from the gripper pinch point to the nearest object.
-- **Grasp Bonus ($B_{\text{grasp}}$):** Exact `+0.5` points granted continuously when the object is lifted `>1 cm` from the floor while gripped.
-- **Place Penalty ($D_{\text{place}}$):** Negative Euclidean distance between the currently grasped object and the final destination.
-- **Success Bonus ($B_{\text{success}}$):** A flat `+10.0` points is given if the object arrives inside the target area.
+- **Reach Penalty ($D_{\text{reach}}$):** Negative Euclidean distance from the gripper pinch point to the object.
+- **Grasp Bonus ($B_{\text{grasp}}$):** One-shot `+1.0` granted the first time the object is lifted `>1 cm` from the floor while the gripper is within `5 cm` of it.
+- **Place Penalty ($D_{\text{place}}$):** Negative Euclidean distance between the object and the final destination.
+- **Success Bonus ($B_{\text{success}}$):** A flat `+100.0` points is given if the object arrives within `1 mm` of the target area.
 
 ### Termination / Truncation
 
-- **Termination:** Triggers exactly when any object reaches `< 5 cm` from the `target_site`.
+- **Termination:** Triggers exactly when the object is within `1 mm` of the `target_site`.
 - **Truncation:** Standard maximum episode limits bound at `500` timesteps.
 
 ---

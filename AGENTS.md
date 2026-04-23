@@ -32,10 +32,10 @@ High-signal facts for working in this repo.
 
 ### VS050-PickAndPlace-v0
 
-- **Observation:** flat `Box` `(37,)` — `[qpos(6), qvel(6), gripper(1), obj_pos(9), obj_quat(12), target(3)]`.
+- **Observation:** flat `Box` `(23,)` — `[qpos(6), qvel(6), gripper(1), obj_pos(3), obj_quat(4), target(3)]`.
 - **Action:** `Box(-1, 1, (7,))` — 6 arm joint deltas (`±0.05` rad) + gripper (`[-1, 1]` → `[0, 255]`).
-- **Reward:** dense: `-d_reach + grasp_bonus(0.5) - d_place + success_bonus(10.0)`.
-- **Success:** any object within `5 cm` of target. Truncation at `500` steps.
+- **Reward:** dense: `-d_reach + grasp_bonus(1.0) - d_place + success_bonus(100.0)`.
+- **Success:** object within `1 mm` of target. Truncation at `500` steps.
 - **Render modes:** `human`, `rgb_array`, `depth_array`.
 
 ## Known Stale References
