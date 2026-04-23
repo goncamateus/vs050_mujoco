@@ -61,3 +61,20 @@ The gripper's multi-bar linkage is fully simulated using equality constraints an
 ## Meshes & Assets
 
 Collada (`.dae`) and STL meshes are located in the `assets/` directory. They are natively supported by MuJoCo (≥ 2.3.x).
+
+## Visualizer
+
+Run the interactive viewer:
+
+```bash
+uv run python -m vs050_mujoco.models.visualize [reach|pick|vs050|2f85]
+```
+
+| Arg | Model |
+|-----|-------|
+| `reach` | scene_reach.xml (default) |
+| `pick` | pick_and_place_scene.xml |
+| `vs050` | vs050.xml |
+| `2f85` | vs050_2f85.xml |
+
+Controls: [drag] rotate, [scroll] zoom, [shift+drag] pan. Press [ESC] to exit.
