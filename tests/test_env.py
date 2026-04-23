@@ -56,4 +56,3 @@ def test_rgb_array():
     assert frame is not None, "render() must return an array in rgb_array mode"
     assert frame.ndim == 3 and frame.shape[2] == 3, "frame must be HxWx3"
     print(f"  rgb_array frame shape: {frame.shape}  ✓")
-    env.close()
