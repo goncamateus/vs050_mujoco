@@ -38,7 +38,7 @@ _MIN_OBJ_DIST = 0.12
 
 # Target zone (should match target_site in XML)
 _TARGET_POS = np.array([0.30, 0.30, _OBJ_HALF], dtype=np.float64)
-_SUCCESS_DIST = 0.05  # 5 cm
+_SUCCESS_DIST = 0.001  # 1 mm
 
 # Exclude zone around robot base
 _ROBOT_EXCLUSION_R = 0.18
@@ -119,6 +119,8 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         )
         self._init_cache_ids()
         self._init_state(target_pos, reset_noise_scale)
+
+        self._is_grasped = False  # track grasp state
 
         obs_dim = (
             _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + _N_OBJECTS * 3 + _N_OBJECTS * 4 + 3
@@ -254,16 +256,20 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         return float(-d_reach + grasp_bonus - d_place + success_bonus)
 
     def _get_nearest_object_distance(self, pinch: np.ndarray) -> tuple[int, float]:
-        dists = [
-            np.linalg.norm(pinch - self._get_obj_pos(i)) for i in range(_N_OBJECTS)
-        ]
+        dists = np.array(
+            [np.linalg.norm(pinch - self._get_obj_pos(i)) for i in range(_N_OBJECTS)]
+        )
         nearest_idx = int(np.argmin(dists))
         return nearest_idx, dists[nearest_idx]
 
     def _get_grasp_bonus(self, d_reach: float, nearest_pos: np.ndarray) -> float:
         is_lifted = nearest_pos[2] > _Z_OBJ + 0.01
-        is_grasped = d_reach < 0.08 and is_lifted
-        return 0.5 if is_grasped else 0.0
+        is_grasped = d_reach < 0.05 and is_lifted
+        reward = 0.0
+        if is_grasped and not self._is_grasped:
+            self._is_grasped = True
+            reward += 1.0
+        return reward
 
     def _get_place_distance(self, nearest_pos: np.ndarray) -> float:
         return float(np.linalg.norm(nearest_pos - self._target_pos))
@@ -318,6 +324,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._reset_arm()
         self._reset_objects()
         self._step_count = 0
+        self._is_grasped = False
         return self._get_obs()
 
     def _reset_simulation(self):
