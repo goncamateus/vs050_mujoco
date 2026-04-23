@@ -12,7 +12,8 @@ High-signal facts for working in this repo.
 ## Tests
 
 - **Pytest suite:** `uv run pytest tests/test_env.py`
-- **Standalone smoke test:** `uv run python test_env.py` (root file, tests ReachPose)
+- **Standalone smoke test:** `uv run python test_env.py` (tests ReachPose)
+- **`tests/test_env.py`:** tests PickAndPlace (imports `vs050_mujoco` to register envs)
 
 ## Architecture
 
