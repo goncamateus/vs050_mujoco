@@ -11,7 +11,7 @@ import os
 import mujoco
 import numpy as np
 from gymnasium import spaces, utils
-from gymnasium.envs.mujoco import MujocoEnv
+from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 
 # Path to the MuJoCo XML scene
 _SCENE_XML = os.path.join(
@@ -36,6 +36,8 @@ _OBJ_HALF = 0.025
 # Target zone (should match target_site in XML)
 _TARGET_POS = np.array([0.30, 0.30, _OBJ_HALF], dtype=np.float64)
 _SUCCESS_DIST = 0.001  # 1 mm
+_GRASP_DIST = 0.05  # 5 cm
+_FINGER_THRESHOLD = 112  # gripper command threshold for "closed" state (0-255)
 
 # Exclude zone around robot base
 _ROBOT_EXCLUSION_R = 0.18
@@ -46,6 +48,8 @@ DEFAULT_CAMERA_CONFIG = {
     "azimuth": 125.0,
     "elevation": -15.0,
 }
+
+SUCCESS_REWARD = 100.0
 
 
 class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
@@ -121,6 +125,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
             "render_modes": ["human", "rgb_array", "depth_array"],
             "render_fps": int(np.round(1.0 / self.dt)),
         }
+        self.reward_info = {}
 
     # -------------------------------------------------------------------
     # Sub-initialisers
@@ -246,14 +251,29 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     # ===================================================================
 
     def _compute_reward(self) -> float:
+        pinch_pos = self._get_pinch_pos()
         obj_pos = self._get_obj_pos()
-        d_place = float(np.linalg.norm(obj_pos - self._target_pos))
-        return 100.0 if self._check_success() else -d_place
+        dist_pinch_obj = float(np.linalg.norm(pinch_pos - obj_pos))
+        is_grasped = int(self._check_grasp(pinch_pos, obj_pos))
+        dist_place = float(np.linalg.norm(obj_pos - self._target_pos))
+        success = self._check_success(obj_pos)
+        self.reward_info["dist_pinch_obj"] = dist_pinch_obj
+        self.reward_info["dist_place"] = dist_place
+        self.reward_info["is_grasped"] = is_grasped
+        self.reward_info["success"] = int(success)
+        reward = -dist_place - dist_pinch_obj + is_grasped * (dist_pinch_obj + 0.1)
+        return SUCCESS_REWARD if success else reward
 
-    def _check_success(self) -> bool:
+    def _check_grasp(self, pinch_pos: np.ndarray, obj_pos: np.ndarray) -> bool:
+        is_close = float(np.linalg.norm(pinch_pos - obj_pos)) < _GRASP_DIST
+        is_closed = float(self.data.ctrl[self._gripper_act_id]) > _FINGER_THRESHOLD
+        return is_close and is_closed
+
+    def _check_success(self, obj_pos: np.ndarray) -> bool:
         """True if object is within _SUCCESS_DIST of target."""
-        pos = self._get_obj_pos()
-        return float(np.linalg.norm(pos - self._target_pos)) < _SUCCESS_DIST
+        is_open = float(self.data.ctrl[self._gripper_act_id]) <= _FINGER_THRESHOLD
+        is_placed = float(np.linalg.norm(obj_pos - self._target_pos)) < _SUCCESS_DIST
+        return is_open and is_placed
 
     # ===================================================================
     # Info helpers
@@ -296,6 +316,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._reset_object()
         self._step_count = 0
         self._is_grasped = False
+        self.reward_info = {}
         return self._get_obs()
 
     def _reset_simulation(self):
@@ -375,12 +396,11 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _build_step_return(self):
         obs = self._get_obs()
         reward = self._compute_reward()
-        terminated = self._check_success()
+        terminated = reward >= 100.0
         truncated = False
 
         info = self._get_reset_info()
-        info["dist_place"] = -reward if not terminated else 0.0
-        info["is_success"] = terminated
+        info.update(self.reward_info)
 
         if self.render_mode == "human":
             self.render()
