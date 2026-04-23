@@ -375,21 +375,14 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _build_step_return(self):
         obs = self._get_obs()
         reward = self._compute_reward()
-        success = self._check_success()
-        terminated = success
+        terminated = self._check_success()
         truncated = False
 
         info = self._get_reset_info()
-        info["dist_place"] = reward if not success else 0.0
-        info["is_success"] = success
+        info["dist_place"] = -reward if not terminated else 0.0
+        info["is_success"] = terminated
 
         if self.render_mode == "human":
             self.render()
 
-        return (
-            obs,
-            reward,
-            terminated,
-            truncated,
-            info,
-        )
+        return obs, reward, terminated, truncated, info
