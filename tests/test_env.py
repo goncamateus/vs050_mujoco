@@ -3,13 +3,15 @@ Smoke-test for VS050 Pick-and-Place environment.
 Run from the repo root:
     python test_env.py
 """
+
+import gymnasium as gym
 import numpy as np
 
 # ── Register the env ──────────────────────────────────────────────
 import vs050_mujoco as _pkg  # noqa: F401  (registers VS050-PickAndPlace-v0)
-import gymnasium as gym
 
 # ── Tests ─────────────────────────────────────────────────────────
+
 
 def test_basic():
     print("Creating environment …")
@@ -34,7 +36,7 @@ def test_basic():
         if terminated or truncated:
             obs, info = env.reset()
 
-    print(f"  20 random steps OK")
+    print("  20 random steps OK")
     print(f"  last reward: {reward:.4f}")
     print(f"  last info: {info}")
 
@@ -55,4 +57,3 @@ def test_rgb_array():
     assert frame.ndim == 3 and frame.shape[2] == 3, "frame must be HxWx3"
     print(f"  rgb_array frame shape: {frame.shape}  ✓")
     env.close()
-

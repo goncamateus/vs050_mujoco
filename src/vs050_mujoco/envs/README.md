@@ -10,8 +10,6 @@ ReachPose is a goal-oriented environment designed for Hindsight Experience Repla
 
 * **Simulation:** The bare VS050 arm on a floor. A translucent red sphere marks the goal position, sampled from a conservative workspace envelope.
 * **Objective:** Drive the end-effector (the `attachment_site`) within `4 cm` of the desired target.
-* **HER-Compatible:** Implements the GoalEnv dict observation spec so that HER can relabel achieved/desired goals after the fact.
-
 ### Action Space
 
 The action space is a `Box(-1.0, 1.0, (6,), float32)`.
@@ -22,28 +20,26 @@ The action space is a `Box(-1.0, 1.0, (6,), float32)`.
 
 ### Observation Space
 
-The observation space is a Dict with GoalEnv-compatible keys:
+The observation space is a flat `Box`:
 
-| Key              | Shape       | Description |
-|------------------|-------------|-------------|
-| `observation`    | `(27,)`     | Joint pos (6) + joint vel (6) + EE xyz (3) + control targets (6) + target geom xyz (3) + target site xyz (3) + padding (3) |
-| `achieved_goal`  | `(3,)`      | End-effector position in world frame |
-| `desired_goal`   | `(3,)`      | Target position in world frame |
+| Indices | Description | Details |
+|---------|-------------|---------|
+| `0–5`  | Joint positions (`qpos`) | 6 arm joint positions (rad). |
+| `6–11` | Joint velocities (`qvel`) | 6 arm joint velocities (rad/s). |
+| `12–14`| End-effector XYZ | Position of `attachment_site` in world frame. |
+| `15–17`| Goal position XYZ | Position of `target_marker` geom in world frame. |
+| `18–20`| Relative position | `goal_pos - ee_pos`. |
 
 ### Reward
 
-A mix of dense shaping and a sparse success bonus:
+Potential-based shaping plus control cost and sparse success bonus:
 
-```math
-R = \begin{cases}
--\| \text{achieved} - \text{desired} \|_2, & \text{if } d > 4 \text{ cm}\\
-10.0, & \text{if } d < 4 \text{ cm}
-\end{cases}
-```
+- **Dense:** `-distance - ctrl_cost`
+- **Success bonus:** `+100.0` when end-effector is within `1 cm` of goal.
 
 ### Termination / Truncation
 
-- **Termination:** Exact when the end-effector is within `4 cm` of the desired goal.
+- **Termination:** When end-effector is within `1 cm` of goal.
 - **Truncation:** Standard maximum episode limit of `500` timesteps.
 
 ---
@@ -52,7 +48,7 @@ R = \begin{cases}
 
 ![Pick and Place Environment](../../../assets/pick_and_place.gif)
 
-A dense-reward environment where the agent must control the VS050 robot arm and a Robotiq 2F-85 gripper to pick up cubic objects and place them on a target marker.
+A dense-reward environment where the agent must control the VS050 robot arm and a Robotiq 2F-85 gripper to pick up cubic objects and place them on a target marker. Inherits from `gymnasium.envs.mujoco.MujocoEnv`.
 
 * **Simulation:** The robot operates inside a transparent 1.2m³ glass cage with a wood floor. Three colored cubes (red, blue, yellow) spawn at random intervals within the cage area.
 * **Objective:** Move the gripper, securely grab an object, and bring it within `5 cm` of the green target site.
@@ -98,8 +94,3 @@ R = -D_{\text{reach}} + B_{\text{grasp}} - D_{\text{place}} + B_{\text{success}}
 - **Truncation:** Standard maximum episode limits bound at `500` timesteps.
 
 ---
-
-**Running an Example Headless/Human Agent:**
-```bash
-uv run python examples/random_agent.py
-```

@@ -21,6 +21,7 @@ packages = ["src/vs050_mujoco"]
 dev = [
     "imageio>=2.37.3",
     "pytest>=9.0.2",
+    "ruff>=0.6.0",
 ]
 rl = [
     "gymnasium[other]>=1.2.3",
