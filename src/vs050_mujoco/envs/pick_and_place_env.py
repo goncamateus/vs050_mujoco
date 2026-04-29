@@ -35,7 +35,7 @@ _OBJ_HALF = 0.025
 
 # Target zone (should match target_site in XML)
 _TARGET_POS = np.array([0.30, 0.30, _OBJ_HALF], dtype=np.float64)
-_SUCCESS_DIST = 0.001  # 1 mm
+_SUCCESS_DIST = 0.01  # 1 cm
 _GRASP_DIST = 0.05  # 5 cm
 _FINGER_THRESHOLD = 112  # gripper command threshold for "closed" state (0-255)
 
@@ -113,6 +113,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._init_state(target_pos, reset_noise_scale)
 
         self._is_grasped = False  # track grasp state
+        self._stage = "REACH"  # reward stage: REACH, GRASP, PLACE
 
         obs_dim = _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + 3 + 4 + 3
         self.observation_space = spaces.Box(
@@ -257,11 +258,28 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         is_grasped = int(self._check_grasp(pinch_pos, obj_pos))
         dist_place = float(np.linalg.norm(obj_pos - self._target_pos))
         success = self._check_success(obj_pos)
+
+        # Stage transition logic (monotonic)
+        is_closed = float(self.data.ctrl[self._gripper_act_id]) > _FINGER_THRESHOLD
+        if self._stage == "REACH" and dist_pinch_obj < _GRASP_DIST and is_closed:
+            self._stage = "GRASP"
+        elif self._stage == "GRASP" and is_grasped:
+            self._stage = "PLACE"
+
+        # Staged reward calculation
+        if self._stage == "REACH":
+            reward = -dist_pinch_obj
+        elif self._stage == "GRASP":
+            reward = -dist_pinch_obj + 0.1
+        else:  # PLACE
+            reward = -2.0 * dist_place + (0.2 if is_grasped else 0.0)
+
         self.reward_info["dist_pinch_obj"] = dist_pinch_obj
         self.reward_info["dist_place"] = dist_place
         self.reward_info["is_grasped"] = is_grasped
         self.reward_info["success"] = int(success)
-        reward = -dist_place - dist_pinch_obj + is_grasped * (dist_pinch_obj + 0.1)
+        self.reward_info["stage"] = self._stage
+
         return SUCCESS_REWARD if success else reward
 
     def _check_grasp(self, pinch_pos: np.ndarray, obj_pos: np.ndarray) -> bool:
@@ -316,6 +334,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._reset_object()
         self._step_count = 0
         self._is_grasped = False
+        self._stage = "REACH"
         self.reward_info = {}
         return self._get_obs()
 
