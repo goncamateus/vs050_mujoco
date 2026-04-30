@@ -87,9 +87,6 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <!-- Floor -->
-    <geom name="floor" type="plane" pos="0 0 0" size="2 2 0.1"
-          material="matplane" contype="1" conaffinity="1"/>
 
     <!-- Robot fixed to world -->
     <body name="base_link" pos="0 0 0">
