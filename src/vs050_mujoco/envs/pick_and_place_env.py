@@ -49,33 +49,35 @@ DEFAULT_CAMERA_CONFIG = {
     "elevation": -15.0,
 }
 
-SUCCESS_REWARD = 100.0
+SUCCESS_REWARD = 100.0  # kept for backward compat, no longer used in reward
 
 
 class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     """Pick-and-place task with the DENSO VS050 arm and Robotiq 2F-85 gripper.
 
-    **Observation** (23-dim float32):
-        - joint positions  (6)
-        - joint velocities (6)
-        - gripper opening  (1)  – normalised in [0, 1]
-        - object position  (3)
-        - object quat      (4)
-        - target position  (3)
-                        = 23-dim
+    **Observation** (38-dim float32):
+        - joint positions   (6)
+        - joint velocities  (6)
+        - gripper opening   (1)  – normalised in [0, 1]
+        - EE position       (3)  – world xyz of pinch site
+        - EE → object       (3)  – relative vector
+        - object → target   (3)  – relative vector
+        - object position   (3)
+        - object quat       (4)
+        - object velocity   (6)  – linear (3) + angular (3)
+        - target position   (3)
+                        = 38-dim
 
     **Action** (7-dim float32, clipped to [-1, 1]):
         - delta joint targets (6)  → scaled by 0.05 rad/step
         - gripper command     (1)  → mapped to [0, 255] (0=open, 1=closed)
 
-    **Reward** (dense):
-        r = -d(pinch → object)
-          + grasp_bonus
-          - d(object → target)
-          + success_bonus
+    **Reward** (smooth dense):
+        r = -d(EE → object) - d(object → target) + grasp_bonus
+        grasp_bonus = 0.5 * gripper_closed * exp(-d(EE→obj) / 0.02)
 
     **Termination**:
-        - Success: object within _SUCCESS_DIST of target
+        - Success: object within _SUCCESS_DIST of target AND gripper open
         - Truncation: handled by TimeLimit wrapper (max_episode_steps)
     """
 
@@ -113,9 +115,8 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._init_state(target_pos, reset_noise_scale)
 
         self._is_grasped = False  # track grasp state
-        self._stage = "REACH"  # reward stage: REACH, GRASP, PLACE
 
-        obs_dim = _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + 3 + 4 + 3
+        obs_dim = _N_ARM_JOINTS + _N_ARM_JOINTS + 1 + 3 + 3 + 3 + 3 + 4 + 6 + 3
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
@@ -160,6 +161,9 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
 
         self._obj_body_id = self._get_id(mujoco.mjtObj.mjOBJ_BODY, "object0")
         self._obj_qpos_addr = self.model.jnt_qposadr[
+            self._get_id(mujoco.mjtObj.mjOBJ_JOINT, "object0_joint")
+        ]
+        self._obj_qvel_addr = self.model.jnt_dofadr[
             self._get_id(mujoco.mjtObj.mjOBJ_JOINT, "object0_joint")
         ]
         self._arm_qpos_addrs = [
@@ -214,7 +218,10 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
             [
                 self._get_joint_obs(),
                 self._get_gripper_obs(),
+                self._get_ee_obs(),
+                self._get_relative_obs(),
                 self._get_object_obs(),
+                self._get_object_vel_obs(),
                 self._get_target_obs(),
             ]
         ).astype(np.float32)
@@ -227,11 +234,23 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _get_gripper_obs(self) -> np.ndarray:
         return np.array([self.data.ctrl[self._gripper_act_id] / 255.0])
 
+    def _get_ee_obs(self) -> np.ndarray:
+        return self._get_pinch_pos()
+
+    def _get_relative_obs(self) -> np.ndarray:
+        ee_pos = self._get_pinch_pos()
+        obj_pos = self._get_obj_pos()
+        return np.concatenate([ee_pos - obj_pos, obj_pos - self._target_pos])
+
     def _get_object_obs(self) -> np.ndarray:
         addr = self._obj_qpos_addr
         obj_pos = self.data.qpos[addr : addr + 3]
         obj_quat = self.data.qpos[addr + 3 : addr + 7]
         return np.concatenate([obj_pos, obj_quat])
+
+    def _get_object_vel_obs(self) -> np.ndarray:
+        addr = self._obj_qvel_addr
+        return self.data.qvel[addr : addr + 6].copy()
 
     def _get_target_obs(self) -> np.ndarray:
         return self._target_pos
@@ -259,28 +278,19 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         dist_place = float(np.linalg.norm(obj_pos - self._target_pos))
         success = self._check_success(obj_pos)
 
-        # Stage transition logic (monotonic)
-        is_closed = float(self.data.ctrl[self._gripper_act_id]) > _FINGER_THRESHOLD
-        if self._stage == "REACH" and dist_pinch_obj < _GRASP_DIST and is_closed:
-            self._stage = "GRASP"
-        elif self._stage == "GRASP" and is_grasped:
-            self._stage = "PLACE"
+        # Smooth grasp bonus: continuous function of gripper closure and proximity
+        gripper_norm = float(self.data.ctrl[self._gripper_act_id]) / 255.0
+        grasp_bonus = 0.5 * gripper_norm * float(np.exp(-dist_pinch_obj / 0.02))
 
-        # Staged reward calculation
-        if self._stage == "REACH":
-            reward = -dist_pinch_obj
-        elif self._stage == "GRASP":
-            reward = -dist_pinch_obj + 0.1
-        else:  # PLACE
-            reward = -2.0 * dist_place + (0.2 if is_grasped else 0.0)
+        reward = -dist_pinch_obj - dist_place + grasp_bonus
 
         self.reward_info["dist_pinch_obj"] = dist_pinch_obj
         self.reward_info["dist_place"] = dist_place
         self.reward_info["is_grasped"] = is_grasped
         self.reward_info["success"] = int(success)
-        self.reward_info["stage"] = self._stage
+        self.reward_info["grasp_bonus"] = grasp_bonus
 
-        return SUCCESS_REWARD if success else reward
+        return reward
 
     def _check_grasp(self, pinch_pos: np.ndarray, obj_pos: np.ndarray) -> bool:
         is_close = float(np.linalg.norm(pinch_pos - obj_pos)) < _GRASP_DIST
@@ -334,7 +344,6 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._reset_object()
         self._step_count = 0
         self._is_grasped = False
-        self._stage = "REACH"
         self.reward_info = {}
         return self._get_obs()
 
@@ -415,7 +424,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
     def _build_step_return(self):
         obs = self._get_obs()
         reward = self._compute_reward()
-        terminated = reward >= 100.0
+        terminated = self._check_success(self._get_obj_pos())
         truncated = False
 
         info = self._get_reset_info()
