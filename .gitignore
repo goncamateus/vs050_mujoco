@@ -155,5 +155,8 @@ cython_debug/
 # Mujoco
 *MUJOCO_LOG.TXT
 
+# Training outputs
+examples/
+checkpoints/
 runs/
 wandb/

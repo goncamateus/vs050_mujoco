@@ -72,9 +72,10 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         - delta joint targets (6)  → scaled by 0.05 rad/step
         - gripper command     (1)  → mapped to [0, 255] (0=open, 1=closed)
 
-    **Reward** (smooth dense):
-        r = -d(EE → object) - d(object → target) + grasp_bonus
-        grasp_bonus = 0.5 * gripper_closed * exp(-d(EE→obj) / 0.02)
+    **Reward** (multiplicative gaussian, matches mjlab):
+        r = reach * (1 + lift * (1 + place))
+        - 0.01 * ||a||^2 (action rate penalty)
+        reach = exp(-d(EE→obj)^2 / 0.02), lift = exp(-dz^2 / 0.02), place = exp(-d^2 / 0.005)
 
     **Termination**:
         - Success: object within _SUCCESS_DIST of target AND gripper open
@@ -128,6 +129,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
             "render_fps": int(np.round(1.0 / self.dt)),
         }
         self.reward_info = {}
+        self._last_action = None  # for action rate penalty (matches mjlab)
 
     # -------------------------------------------------------------------
     # Sub-initialisers
@@ -278,17 +280,32 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         dist_place = float(np.linalg.norm(obj_pos - self._target_pos))
         success = self._check_success(obj_pos)
 
-        # Smooth grasp bonus: continuous function of gripper closure and proximity
-        gripper_norm = float(self.data.ctrl[self._gripper_act_id]) / 255.0
-        grasp_bonus = 0.5 * gripper_norm * float(np.exp(-dist_pinch_obj / 0.02))
+        # Multiplicative gaussian shaping (matches mjlab):
+        #   reach * (1 + lift * (1 + place))
+        # Bounded in [0, ~3]. Smooth gradient everywhere.
+        reach_err = dist_pinch_obj ** 2
+        lift_err = (obj_pos[2] - self._target_pos[2]) ** 2
+        place_err = dist_place ** 2
 
-        reward = -dist_pinch_obj - dist_place + grasp_bonus
+        reach = float(np.exp(-reach_err / (2.0 * 0.1 ** 2)))
+        lift = float(np.exp(-lift_err / (2.0 * 0.1 ** 2)))
+        place = float(np.exp(-place_err / (2.0 * 0.05 ** 2)))
+
+        reward = reach * (1.0 + lift * (1.0 + place))
+
+        # Action rate penalty (matches mjlab: weight=-0.01)
+        if self._last_action is not None:
+            action_rate_cost = 0.01 * float(np.sum(self._last_action ** 2))
+            reward -= action_rate_cost
+        self._last_action = None  # reset after penalty (action is applied in step)
 
         self.reward_info["dist_pinch_obj"] = dist_pinch_obj
         self.reward_info["dist_place"] = dist_place
         self.reward_info["is_grasped"] = is_grasped
         self.reward_info["success"] = int(success)
-        self.reward_info["grasp_bonus"] = grasp_bonus
+        self.reward_info["reach"] = reach
+        self.reward_info["lift"] = lift
+        self.reward_info["place"] = place
 
         return reward
 
@@ -345,6 +362,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         self._step_count = 0
         self._is_grasped = False
         self.reward_info = {}
+        self._last_action = None  # reset action history (matches mjlab)
         return self._get_obs()
 
     def _reset_simulation(self):
@@ -400,6 +418,7 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1.0, 1.0)
+        self._last_action = action.copy()  # for action rate penalty (matches mjlab)
         ctrl = self._build_control(action)
         self.do_simulation(ctrl, self.frame_skip)
         self._step_count += 1
@@ -425,6 +444,11 @@ class PickAndPlaceEnv(MujocoEnv, utils.EzPickle):
         obs = self._get_obs()
         reward = self._compute_reward()
         terminated = self._check_success(self._get_obj_pos())
+        # out_of_bounds termination (matches mjlab: dist > 0.5m from robot base)
+        obj_pos = self._get_obj_pos()
+        base_pos = np.array([0.0, 0.0, 0.0])  # robot base at origin
+        if np.linalg.norm(obj_pos[:2] - base_pos[:2]) > 0.5:
+            terminated = True
         truncated = False
 
         info = self._get_reset_info()

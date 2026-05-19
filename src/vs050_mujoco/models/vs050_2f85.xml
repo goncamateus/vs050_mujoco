@@ -142,7 +142,7 @@
 
                 <body name="J6" pos="0 0 0.07">
                   <joint name="joint_6" type="hinge" axis="0 0 1"
-                         range="-3.141592653589793 3.141592653589793"
+                         range="-6.28318530717959 6.28318530717959"
                          actuatorfrcrange="-50 50"/>
                   <geom mesh="J6" class="visual" name="J6_visual"/>
                   <geom mesh="J6" class="collision" name="J6_collision"/>
@@ -291,7 +291,7 @@
               ctrlrange="-2.0943951023932 2.0943951023932"
               kp="200" kv="20"/>
     <position name="act_joint_6" joint="joint_6"
-              ctrlrange="-3.141592653589793 3.141592653589793"
+              ctrlrange="-6.28318530717959 6.28318530717959"
               kp="100" kv="10"/>
 
     <!-- Robotiq 2F-85 actuator -->

@@ -45,6 +45,22 @@ The project documentation is cleanly split into two modules covering the simulat
 - 🤖 **[Models Documentation](src/vs050_mujoco/models/README.md)**: Kinematics, joint limits, meshes, and standalone MuJoCo models.
 - 🎯 **[Environments Documentation](src/vs050_mujoco/envs/README.md)**: Details on observation spaces, action constraints, and reward functions (includes visual previews).
 
+## Relationship with vs050-mjlab
+
+`vs050-mjlab` ([github.com/goncamateus/vs050_mjlab](https://github.com/goncamateus/vs050_mjlab)) is the RL training companion repo. It depends on `vs050-mujoco` for robot models and provides:
+
+- **ManagerBasedRlEnv** wrappers for batched (100s-1000s env) training with RSL-RL
+- **Smooth gaussian reward functions** for stable policy learning
+- **PPO training scripts** with W&B logging
+- **Entity-based scene composition** via mjlab's API
+
+Use `vs050-mujoco` for: testing, visualization, SB3 training, debugging
+Use `vs050-mjlab` for: production RL training with RSL-RL, large-scale parallel simulation
+
+The two repos share the same MuJoCo XML models and robot kinematics, but use different abstraction layers:
+- `vs050-mujoco`: `gymnasium.envs.mujoco.MujocoEnv` → flat numpy arrays, single env
+- `vs050-mjlab`: `mjlab.envs.ManagerBasedRlEnv` → dict of torch tensors, batched
+
 ## License
 
 This project integrates assets from multiple open-source sources, distributed under their respective licenses:

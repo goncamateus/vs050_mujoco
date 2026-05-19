@@ -49,10 +49,9 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
     **Action** (6-dim float32, clipped to [-1, 1]):
         - delta joint targets (6)  → scaled per joint by _max_delta
 
-    **Reward** (dense):
-        r = -d(ee → goal)
-          - ctrl_cost
-          + success_bonus
+    **Reward** (smooth dense, matches mjlab):
+        r = exp(-d^2 / 0.02) + exp(-d^2 / 0.00125) - 0.01 * ||a - a_prev||^2
+        - reach_kernel(std=0.1) + reach_kernel_precise(std=0.025) - action_rate_l2
 
     **Termination**:
         - Success: end-effector within success_dist of goal
@@ -124,6 +123,8 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
             "render_modes": ["human", "rgb_array", "depth_array"],
             "render_fps": int(np.round(1.0 / self.dt)),
         }
+        self._step_count = 0
+        self._last_action = None  # for action rate penalty (matches mjlab)
         self.reward_info = {}
 
     # -------------------------------------------------------------------
@@ -173,7 +174,6 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         self.success_reward = success_reward
         self.ctrl_cost_weight = ctrl_cost_weight
         self._reset_noise_scale = reset_noise_scale
-        self._step_count = 0
 
     # ===================================================================
     # MuJoCo helpers
@@ -225,13 +225,28 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         ee_pos = self._get_ee_pos()
         goal_pos = self._get_goal_pos()
         dist = float(np.linalg.norm(ee_pos - goal_pos))
-        ctrl_cost = float(self.ctrl_cost_weight * np.sum(np.square(action)))
         success = self._check_success(dist)
 
-        reward = -dist - ctrl_cost + (self.success_reward if success else 0.0)
+        # Smooth gaussian reach kernel (matches mjlab: std=0.1)
+        reach_reward = float(np.exp(-(dist ** 2) / (2.0 * 0.1 ** 2)))
+
+        # Fine-grained convergence kernel (matches mjlab: std=0.025)
+        reach_precise = float(np.exp(-(dist ** 2) / (2.0 * 0.025 ** 2)))
+
+        # Action rate penalty (matches mjlab: weight=-0.01)
+        if self._last_action is not None:
+            action_rate_cost = 0.01 * float(np.sum((action - self._last_action) ** 2))
+        else:
+            action_rate_cost = 0.0
+        self._last_action = action.copy()
+
+        # Reward: reach + reach_precise - action_rate (no sparse bonus needed with smooth rewards)
+        reward = reach_reward + reach_precise - action_rate_cost
 
         self.reward_info["distance"] = dist
-        self.reward_info["ctrl_cost"] = ctrl_cost
+        self.reward_info["reach_reward"] = reach_reward
+        self.reward_info["reach_precise"] = reach_precise
+        self.reward_info["action_rate_cost"] = action_rate_cost
         self.reward_info["success"] = success
 
         return reward
@@ -278,6 +293,7 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
         self._reset_goal()
         self._step_count = 0
         self.reward_info = {}
+        self._last_action = None  # reset action history
         return self._get_obs()
 
     def _reset_simulation(self):
@@ -321,7 +337,7 @@ class ReachPoseEnv(MujocoEnv, utils.EzPickle):
     def _build_step_return(self, action: np.ndarray):
         obs = self._get_obs()
         reward = self._compute_reward(action)
-        terminated = bool(self.reward_info["success"])
+        terminated = False  # mjlab uses time_out only (no success termination)
         truncated = False
 
         info = self._get_reset_info()

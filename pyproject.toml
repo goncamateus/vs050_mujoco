@@ -32,3 +32,10 @@ rl = [
 wandb = [
     "wandb>=0.17.7",
 ]
+cleanrl = [
+    "torch>=2.2.0",
+    "numpy>=1.24.0",
+    "wandb>=0.17.7",
+    "gymnasium[mujoco]>=1.2.3",
+    "moviepy>=2.2.1",
+]
